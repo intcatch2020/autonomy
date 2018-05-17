@@ -19,9 +19,10 @@ import java.net.InetSocketAddress;
 
 /**
  * Implements a debugging panel that can be used to test the vehicle server.
- *
+ * <p>
  * This fragment implements a debugging panel to observe incoming sensor data and teleoperate the
  * vehicle directly for testing purposes.
+ * </p>
  */
 public class DebugFragment extends Fragment
         implements SharedPreferences.OnSharedPreferenceChangeListener {

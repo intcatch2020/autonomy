@@ -20,11 +20,12 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 
 /**
- * Wrapper for interfacing with the Platypus Controller board.
- * <p/>
+ * Wrapper for interfacing with the Platypus e-board.
+ * <p>
  * This class provides simple JSON-based send and receive functionality to a
  * Platypus controller board.  The class is automatically kept up to date with
  * accessories by listening to USB connection and disconnection Intents.
+ * </p>
  */
 public class Controller {
     private static final String ACTION_USB_PERMISSION = "com.platypus.android.server.USB_PERMISSION";

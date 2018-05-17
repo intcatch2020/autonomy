@@ -6,11 +6,15 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
-/**
+/*
  * Created by jason on 10/17/17.
  *
  */
 
+/**
+ * Contains functionality to track which sensor data has been sent
+ * and send randomly chosen data from the backlog of unsent data.
+ */
 class TimestampedSensorData
 {
 		private static final Object lock = new Object();

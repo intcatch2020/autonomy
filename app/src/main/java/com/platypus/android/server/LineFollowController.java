@@ -8,6 +8,14 @@ import com.platypus.crw.data.Twist;
 import com.platypus.crw.data.UtmPose;
 import com.platypus.crw.data.Pose3D;
 
+/**
+ * Contains the autonomous navigation functionality,
+ * specifically the line following algorithm.
+ * <p>
+ *     With this, the vehicle should navigate along the line
+ *     between two waypoints.
+ * </p>
+ */
 class LineFollowController implements VehicleController {
 
     private int last_wp_index = -2;

@@ -32,7 +32,7 @@ import javax.measure.unit.NonSI;
 import javax.measure.unit.SI;
 
 
-/**
+/*
  * Created by jason on 8/4/17.
  *
  * https://docs.oracle.com/javase/tutorial/java/javaOO/lambdaexpressions.html
@@ -142,14 +142,22 @@ import javax.measure.unit.SI;
  *
  */
 
-public class AutonomousPredicates
+/**
+ * Contains the functionality to parse autonomous behavior definitions,
+ * generate periodic poll Runnable objects that check trigger conditions
+ * and execute the associated action
+ * <p>
+ *     Triggers are built via the builder pattern and Java 1.8 Predicates
+ * </p>
+ */
+class AutonomousPredicates
 {
-		VehicleServerImpl _serverImpl;
-		String logTag = "AP";
-		static long ap_count = 0;
-		Map<Long, ScheduledFuture> triggered_actions_map = new HashMap<>();
-		ScheduledThreadPoolExecutor poolExecutor = new ScheduledThreadPoolExecutor(4);
-		final double ISNEAR_DISTANCE_THRESHOLD = 3;
+		private VehicleServerImpl _serverImpl;
+		private String logTag = "AP";
+		private static long ap_count = 0;
+		private Map<Long, ScheduledFuture> triggered_actions_map = new HashMap<>();
+		private ScheduledThreadPoolExecutor poolExecutor = new ScheduledThreadPoolExecutor(4);
+		private final double ISNEAR_DISTANCE_THRESHOLD = 3;
 		// TODO: do we want something that can increase and decrease the thread pool, rather than fixed?
 
 		class TriggeredAction implements Runnable
@@ -160,7 +168,7 @@ public class AutonomousPredicates
 				String _action; // meant to call methods in the VehicleServerImpl
 				String _name;
 
-				public TriggeredAction(String name, Predicate<Void> test, String action, boolean isPermanent)
+				TriggeredAction(String name, Predicate<Void> test, String action, boolean isPermanent)
 				{
 						_id = ap_count++;
 						_isPermanent = isPermanent;
@@ -169,7 +177,7 @@ public class AutonomousPredicates
 						_name = name;
 				}
 
-				public long getID() { return _id; }
+				long getID() { return _id; }
 
 				@Override
 				public void run()

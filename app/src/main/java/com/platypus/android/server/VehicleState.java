@@ -13,10 +13,21 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import javolution.lang.Reflection;
 
-/**
+/*
  * Created by jason on 8/11/17.
  */
 
+/**
+ * Contains the state of the vehicle in a name: object map.
+ * Type-erasure and generic typing are used throughout.
+ * <p>
+ *     Geting and setting these values is threadsafe.
+ * </p>
+ * <p>
+ *     This represents a "one-stop-shop" for all the data relevant to
+ *     autonomous behaviors.
+ * </p>
+ */
 public class VehicleState
 {
 

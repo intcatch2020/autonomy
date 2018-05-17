@@ -17,10 +17,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
-/**
+/*
  * Created by jason on 6/7/17.
  */
 
+
+/**
+ * Contains a list of breadcrumbs and the functionality to plan a path
+ * using them as intermediate points.
+ */
 public class Crumb
 {
 		// Instance fields

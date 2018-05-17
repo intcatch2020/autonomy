@@ -15,12 +15,14 @@ import java.util.Random;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-/**
+/*
  * Created by jason on 11/3/17.
  * IMPORTANT: ANCHOR 1 MUST BE THE X AXIS, AND THE ANCHORS MUST FORM A RIGHT-HAND COORDINATE SYSTEM
  */
 
-
+/**
+ * Contains functionality for localization via the Decawave system rather than GPS.
+ */
 class Decawave
 {
 		private static List<Double> d1_history = new ArrayList<>();

@@ -38,10 +38,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Fragment that controls the starting and stopping of the vehicle server.
- * <p/>
+ * <p>
  * This fragment provides a simple full-screen one-touch interface for starting and stopping the
  * vehicle server.  While this screen is up, it can also lock the display on and disables button
  * functionality, making it easier to ensure that the server stays up and running.
+ * </p>
  */
 public class LauncherFragment extends Fragment
         implements SharedPreferences.OnSharedPreferenceChangeListener {

@@ -43,7 +43,7 @@ import javax.measure.unit.SI;
 import com.platypus.crw.data.Pose3D;
 import com.platypus.crw.data.Quaternion;
 
-/**
+/*
  * Contains the actual implementation of vehicle functionality, accessible as a
  * singleton that is updated and maintained by a background service.
  *
@@ -51,13 +51,16 @@ import com.platypus.crw.data.Quaternion;
  * @author kss
  */
 
+/**
+ * Contains the implementation of the vehicle functionality
+ */
 public class VehicleServerImpl extends AbstractVehicleServer
 {
 
 		private static final int UPDATE_INTERVAL_MS = 100;
 
 		////////////////////////////////////////////////////////////////////////////////////////////////
-		// ASDF
+		//
 
 		<F> F getState(String state_name)
 		{
@@ -1620,43 +1623,19 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				}
 		}
 
-		// TODO: Revert capture image to take images
-		// This is a hack to support the water sampler until PID is working again.
 		public synchronized byte[] captureImage(int width, int height)
 		{
-				// Call command to fire sampler
-				try
-				{
-						JSONObject samplerCommand = new JSONObject()
-										.put("s0", new JSONObject()
-														.put("sample", true));
-						mController.send(samplerCommand);
-						mLogger.info(new JSONObject().put("sampler", true));
-						Log.i(TAG, "Triggering sampler.");
-				}
-				catch (JSONException e)
-				{
-						Log.w(TAG, "Unable to serialize sampler command.");
-				}
-				catch (IOException e)
-				{
-						Log.w(TAG, "Unable to send sampler command.");
-				}
-				return new byte[1];
+				return null;
 		}
 
 		public synchronized byte[] captureImageInternal(int width, int height)
 		{
-				byte[] bytes = AirboatCameraActivity.takePhoto(_context, width, height);
-				Log.i(TAG, "Sending image [" + bytes.length + "]");
-				return bytes;
+				return null;
 		}
 
 		public synchronized boolean saveImage()
 		{
-				AirboatCameraActivity.savePhoto(_context);
-				Log.i(TAG, "Saving image.");
-				return true;
+				return false;
 		}
 
 		@Override
