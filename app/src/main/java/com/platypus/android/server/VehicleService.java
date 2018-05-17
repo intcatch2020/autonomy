@@ -237,8 +237,12 @@ public class VehicleService extends Service {
             UtmPose utm = new UtmPose(pose, origin);
 
             // Apply update using filter object
-            if (_vehicleServerImpl != null) {
-                _vehicleServerImpl.filter.gpsUpdate(utm, location.getTime());
+            if (_vehicleServerImpl != null) _vehicleServerImpl.filter.gpsUpdate(utm, location.getTime());
+            if (!(Boolean)_vehicleServerImpl.getState(VehicleState.States.HAS_FIRST_GPS.name))
+            {
+                // use the first GPS fix as the default home pose
+                _vehicleServerImpl.setState(VehicleState.States.HAS_FIRST_GPS.name, true);
+                _vehicleServerImpl.setState(VehicleState.States.HOME_POSE.name, utm);
             }
         }
     };
@@ -381,6 +385,12 @@ public class VehicleService extends Service {
         // Create the internal vehicle server implementation.
         _vehicleServerImpl = new VehicleServerImpl(this, mLogger, mController);
 		    sp = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+
+		    // turn off gps provider if preferences say to use decawave instead
+        if (sp.getBoolean("pref_using_decawave", false))
+        {
+            gps.removeUpdates(locationListener);
+        }
 
         // Start up UDP vehicle service in the background
         startOrUpdateUdpServer();
