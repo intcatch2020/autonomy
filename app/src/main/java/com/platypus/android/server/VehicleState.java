@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import javolution.io.Struct;
 import javolution.lang.Reflection;
 
 /**
@@ -20,10 +21,11 @@ import javolution.lang.Reflection;
 public class VehicleState
 {
 
-		final int NUMBER_OF_SAMPLER_JARS = 4;
+		private final int NUMBER_OF_SAMPLER_JARS = 4;
 		private VehicleServerImpl _serverImpl;
-		static String logTag = "AP";
-		AtomicBoolean[] jar_available = new AtomicBoolean[NUMBER_OF_SAMPLER_JARS];
+		private static String logTag = "AP";
+		private AtomicBoolean[] jar_available = new AtomicBoolean[NUMBER_OF_SAMPLER_JARS];
+		private HashMap<String, State> state_map = new HashMap<>();
 
 		enum States
 		{
@@ -56,6 +58,14 @@ public class VehicleState
 				final String name;
 				States(final String _name) { name = _name; }
 		}
+
+		enum LogOption
+		{
+				NEVER,
+				PRINT_ANY_SET,
+				PRINT_WHEN_CHANGED
+		}
+
 		abstract class State <S, F>
 		{
 				/*
@@ -63,15 +73,32 @@ public class VehicleState
 					Template type F is the value used in get and set, which may be different than S.
 					For example, S is AtomicBoolean and F is Boolean for threadsafe booleans.
 					There is an array of AtomicBoolean objects, and the get and set use Boolean objects.
-					IMPORTANT NOTE: child classes MUST implement 2 constructors!!!
-					Constructor 1: takes integer argument as size of value_array, initializes entire array
-					Constructor 2: same as constructor 1, but assume size = 1
+					*** Uses builder pattern! You must finish an instance with .build()!
+					Builder pattern used so default settings could be handled without several constructors
 					https://stackoverflow.com/questions/529085/how-to-create-a-generic-array-in-java
 				*/
 
-				S[] value_array;
-				State(Class<S> array_class, Class<F> value_class, int size, F default_value)
+				S[] value_array = null;
+				private LogOption log_option = LogOption.NEVER;
+				private String key = "default";
+				private Class<S> array_class = null;
+				private Class<F> value_class = null;
+				private F default_value = null;
+				private int size = 1;
+
+				State(Class<S> _array_class, Class<F> _value_class)
 				{
+						array_class = _array_class;
+						value_class = _value_class;
+				}
+
+				State<S, F> build() throws Exception
+				{
+						// array_class and value_class MUST HAVE BEEN SET
+						if (array_class == null || value_class == null)
+						{
+								throw new Exception("VehicleState: State.build() used without setting array and value class properly");
+						}
 						value_array = (S[])(Array.newInstance(array_class, size));
 						try
 						{
@@ -120,13 +147,46 @@ public class VehicleState
 						{
 								Log.e(logTag, String.format("State class constructor error: %s", e.getMessage()));
 						}
+						return this;
 				}
-				State(Class<S> array_class, Class<F> value_class, F default_value)
+
+				State<S, F> defaultValue(F _default_value)
 				{
-						this(array_class, value_class, 1, default_value); // default size = 1
+						default_value = _default_value;
+						return this;
 				}
+
+				State<S, F> size(int _size)
+				{
+						size = _size;
+						return this;
+				}
+
+				State<S, F> logOption(LogOption _log_option)
+				{
+						log_option = _log_option;
+						return this;
+				}
+
+				State<S, F> key(String _key)
+				{
+						key = _key;
+						return this;
+				}
+
 				abstract F customGet(int index); // the custom implementation of get
 				abstract void customSet(int index, F in); // changing value in a map or array
+
+				// NOTE YOU MUST OVERRIDE isEq() IF YOU USE A CUSTOM TYPE!
+				boolean isEq(F new_value) { return isEq(0, new_value); }
+				boolean isEq(int index, F new_value)
+				{
+						if (index >= 0 && index < value_array.length)
+						{
+								return get(index).equals(new_value);
+						}
+						return false;
+				}
 
 				public F get() { return get(0); } // get first element
 
@@ -143,6 +203,20 @@ public class VehicleState
 				{
 						if (index >= 0 && index < value_array.length)
 						{
+								switch (log_option)
+								{
+										case NEVER:
+												break;
+										case PRINT_ANY_SET:
+												Log.d(logTag, String.format("setState %s[%d] = %s", key, index, in.toString()));
+												break;
+										case PRINT_WHEN_CHANGED:
+												// Log.v(logTag, String.format("setState %s[%d] comparing old and new values", key, index));
+												if (!isEq(index, in)) Log.d(logTag, String.format("setState changed %s[%d] = %s", key, index, in.toString()));
+												break;
+										default:
+												break;
+								}
 								customSet(index, in);
 						}
 				}
@@ -160,8 +234,7 @@ public class VehicleState
 
 		class BooleanState extends State<AtomicBoolean, Boolean>
 		{
-				BooleanState() { super(AtomicBoolean.class, Boolean.class, Boolean.valueOf(false)); }
-				BooleanState(int size) { super(AtomicBoolean.class, Boolean.class, size, Boolean.valueOf(false)); }
+				BooleanState() { super(AtomicBoolean.class, Boolean.class); }
 				@Override
 				public Boolean customGet(int index)
 				{
@@ -176,14 +249,12 @@ public class VehicleState
 
 		class IntegerState extends State<AtomicInteger, Integer>
 		{
-				IntegerState() { super(AtomicInteger.class, Integer.class, Integer.valueOf(0)); }
-				IntegerState(int size) { super(AtomicInteger.class, Integer.class, size, Integer.valueOf(0)); }
+				IntegerState() { super(AtomicInteger.class, Integer.class); }
 				@Override
 				Integer customGet(int index)
 				{
 						return value_array[index].get();
 				}
-
 				@Override
 				void customSet(int index, Integer in)
 				{
@@ -193,8 +264,7 @@ public class VehicleState
 
 		class LongState extends State<AtomicLong, Long>
 		{
-				LongState() { super(AtomicLong.class, Long.class, Long.valueOf(0)); }
-				LongState(int size) { super(AtomicLong.class, Long.class, size, Long.valueOf(0)); }
+				LongState() { super(AtomicLong.class, Long.class); }
 				@Override
 				Long customGet(int index)
 				{
@@ -209,8 +279,7 @@ public class VehicleState
 
 		class DoubleState extends State<Double, Double>
 		{
-				DoubleState() { super(Double.class, Double.class, Double.valueOf(0.0)); }
-				DoubleState(int size) { super(Double.class, Double.class, size, Double.valueOf(0.0)); }
+				DoubleState() { super(Double.class, Double.class); }
 				Object lock = new Object();
 				@Override
 				public Double customGet(int index)
@@ -233,8 +302,7 @@ public class VehicleState
 
 		class UtmPoseState extends State<UtmPose, UtmPose>
 		{
-				UtmPoseState() { super(UtmPose.class, UtmPose.class, new UtmPose()); }
-				UtmPoseState(int size) { super(UtmPose.class, UtmPose.class, size, new UtmPose()); }
+				UtmPoseState() { super(UtmPose.class, UtmPose.class); }
 				Object lock = new Object();
 				@Override
 				public UtmPose customGet(int index)
@@ -246,7 +314,6 @@ public class VehicleState
 										Log.w(logTag, "The requested UtmPose is null");
 										return null;
 								}
-								//Log.e("whatever", String.format("Getting UtmPose %s", value_array[index].toString()));
 								return value_array[index].clone();
 						}
 				}
@@ -261,19 +328,17 @@ public class VehicleState
 										Log.w(logTag, "The supplied UtmPose is null.");
 										return;
 								}
-								//Log.e("whatever", String.format("Setting UtmPose to %s", in.toString()));
 								value_array[index] = in.clone();
 						}
 				}
 		}
-
-		private HashMap<String, State> state_map = new HashMap<>();
 
 		public <F> F get(String state_name)
 		{
 				if (!state_map.containsKey(state_name))
 				{
 						Log.e(logTag, String.format("state \"%s\" does not exist", state_name));
+						return null;
 				}
 				Object result = state_map.get(state_name).get();
 				if (result == null)
@@ -288,6 +353,7 @@ public class VehicleState
 				if (!state_map.containsKey(state_name))
 				{
 						Log.e(logTag, String.format("state \"%s\" does not exist", state_name));
+						return null;
 				}
 				Object result = state_map.get(state_name).get(index);
 				if (result == null)
@@ -325,151 +391,325 @@ public class VehicleState
 						jar_available[i] = new AtomicBoolean(true); // all jars initially available
 				}
 
-				state_map.put(States.EXAMPLE_STATE.name,
-								new State<AtomicBoolean, Boolean>(AtomicBoolean.class, Boolean.class, false)
+				try
 				{
-						@Override
-						Boolean customGet(int index)
-						{
-								value_array[index].set(!value_array[index].get());
-								return value_array[index].get();
-						}
-						@Override
-						void customSet(int index, Boolean in) { }
-				});
-
-				state_map.put(States.EXAMPLE_VALUE.name,
-								new State<Double, Double>(Double.class, Double.class, 0.0)
-				{
-						Object lock = new Object();
-						@Override
-						Double customGet(int index)
-						{
-								synchronized (lock)
+						state_map.put(States.EXAMPLE_STATE.name,
+								new State<AtomicBoolean, Boolean>(AtomicBoolean.class, Boolean.class)
 								{
-										value_array[index] += 1.0;
-										return value_array[index];
+										@Override
+										Boolean customGet(int index)
+										{
+												value_array[index].set(!value_array[index].get());
+												return value_array[index].get();
+										}
+
+										@Override
+										void customSet(int index, Boolean in) { }
 								}
-						}
-						@Override
-						void customSet(int index, Double in) { }
-				});
+								.defaultValue(false)
+								.key(States.EXAMPLE_STATE.name)
+								.logOption(LogOption.PRINT_ANY_SET)
+								.build()
+						);
 
-				state_map.put(States.ALWAYS_FALSE.name, new State<Boolean, Boolean>(Boolean.class, Boolean.class, Boolean.valueOf(false))
-				{
-						@Override
-						Boolean customGet(int index) { return false; }
-						@Override
-						void customSet(int index, Boolean in) { }
-				});
-				state_map.put(States.ALWAYS_TRUE.name, new State<Boolean, Boolean>(Boolean.class, Boolean.class, Boolean.valueOf(true))
-				{
-						@Override
-						Boolean customGet(int index) { return true; }
-						@Override
-						void customSet(int index, Boolean in) { }
-				});
-
-				state_map.put(States.EXAMPLE_ARRAY.name, new State<Long, Long>(Long.class, Long.class, 3, Long.valueOf(0))
-				{
-						long counter;
-						Object lock = new Object();
-						@Override
-						Long customGet(int index)
-						{
-								synchronized (lock)
+						state_map.put(States.EXAMPLE_VALUE.name,
+								new State<Double, Double>(Double.class, Double.class)
 								{
-										value_array[index] = ++counter;
-										return value_array[index];
+										Object lock = new Object();
+
+										@Override
+										Double customGet(int index)
+										{
+												synchronized (lock)
+												{
+														value_array[index] += 1.0;
+														return value_array[index];
+												}
+										}
+
+										@Override
+										void customSet(int index, Double in) { }
 								}
-						}
-						@Override
-						void customSet(int index, Long in) { }
-				});
+								.defaultValue(Double.valueOf(0.0))
+								.key(States.EXAMPLE_VALUE.name)
+								.logOption(LogOption.PRINT_ANY_SET)
+								.build()
+						);
 
-				state_map.put(States.IS_CONNECTED.name, new BooleanState());
-				state_map.put(States.IS_AUTONOMOUS.name, new BooleanState());
-				state_map.put(States.IS_RUNNING.name, new BooleanState());
-				state_map.put(States.HAS_FIRST_AUTONOMY.name, new BooleanState());
-				state_map.put(States.HAS_FIRST_GPS.name, new BooleanState());
-				state_map.put(States.IS_GOING_HOME.name, new BooleanState());
-				state_map.put(States.IS_TAKING_SAMPLE.name, new BooleanState());
-				state_map.put(States.RC_OVERRIDE_IS_ON.name, new BooleanState());
-				state_map.put(States.EC.name, new DoubleState());
-				state_map.put(States.T.name, new DoubleState());
-				state_map.put(States.DO.name, new DoubleState());
-				state_map.put(States.PH.name, new DoubleState());
-				state_map.put(States.WATER_DEPTH.name, new DoubleState());
-				state_map.put(States.BATTERY_VOLTAGE.name, new DoubleState());
-				state_map.put(States.ELAPSED_TIME.name, new State<AtomicLong, Long>(AtomicLong.class, Long.class, Long.valueOf(0))
-				{
-						long first = System.currentTimeMillis();
-
-						@Override
-						Long customGet(int index)
-						{
-								try
+						state_map.put(States.ALWAYS_FALSE.name,
+								new State<Boolean, Boolean>(Boolean.class, Boolean.class)
 								{
-										value_array[index].set(System.currentTimeMillis() - first);
-										Log.v(logTag, String.format("retrieved elapsed time = %d ms", value_array[index].get()));
-										return value_array[index].get();
-								}
-								catch (Exception e)
-								{
-										Log.e(logTag, String.format("Elapsed time customGet() error: %s", e.getMessage()));
-										return null;
-								}
-						}
-						@Override
-						void customSet(int index, Long in) { }
-				});
-				state_map.put(States.TIME_SINCE_OPERATOR.name, new State<AtomicLong, Long>(AtomicLong.class, Long.class, Long.valueOf(0))
-				{
-						@Override
-						Long customGet(int index)
-						{
-								return System.currentTimeMillis() - value_array[index].get();
-						}
+										@Override
+										Boolean customGet(int index)
+										{
+												return false;
+										}
 
-						@Override
-						void customSet(int index, Long in)
-						{
-								value_array[index].set(System.currentTimeMillis()); // set to now, ignore input argument
-						}
-				});
-				state_map.put(States.CURRENT_POSE.name, new UtmPoseState());
-				state_map.put(States.HOME_POSE.name, new UtmPoseState());
-				state_map.put(States.NEXT_AVAILABLE_JAR.name, new State<Void, Integer>(Void.class, Integer.class, Integer.valueOf(0))
-				{
-						// note how the value_array is totally ignored here.
-						// Limitations of the class force the available jar boolean array to be outside
-						@Override
-						Integer customGet(int index)
-						{
-								for (int i = 0; i < jar_available.length; i++)
-								{
-										if (jar_available[i].get()) return Integer.valueOf(i);
+										@Override
+										void customSet(int index, Boolean in)
+										{
+										}
 								}
-								return -1;
-						}
-						@Override
-						void customSet(int index, Integer in) { }
-				});
-				state_map.put(States.JARS_AVAILABLE.name, new State<AtomicBoolean, Boolean>(AtomicBoolean.class, Boolean.class, Boolean.valueOf(true))
-				{
-						@Override
-						Boolean customGet(int index)
-						{
-								Long next_available_jar = (Long)state_map.get(States.NEXT_AVAILABLE_JAR.name).get();
-								return (next_available_jar >= 0);
-						}
+								.defaultValue(Boolean.valueOf(false))
+								.key(States.ALWAYS_FALSE.name)
+								.build()
+						);
 
-						@Override
-						void customSet(int index, Boolean in)
-						{
-								value_array[index].set(in);
-						}
-				});
+						state_map.put(States.ALWAYS_TRUE.name,
+								new State<Boolean, Boolean>(Boolean.class, Boolean.class)
+								{
+										@Override
+										Boolean customGet(int index)
+										{
+												return true;
+										}
+
+										@Override
+										void customSet(int index, Boolean in)
+										{
+										}
+								}
+								.defaultValue(Boolean.valueOf(true))
+								.key(States.ALWAYS_TRUE.name)
+								.build()
+						);
+
+						state_map.put(States.EXAMPLE_ARRAY.name,
+								new State<Long, Long>(Long.class, Long.class)
+								{
+										long counter;
+										Object lock = new Object();
+
+										@Override
+										Long customGet(int index)
+										{
+												synchronized (lock)
+												{
+														value_array[index] = ++counter;
+														return value_array[index];
+												}
+										}
+
+										@Override
+										void customSet(int index, Long in) { }
+								}
+								.size(3)
+								.defaultValue(Long.valueOf(0))
+								.key(States.EXAMPLE_ARRAY.name)
+								.build()
+						);
+
+
+						state_map.put(States.IS_CONNECTED.name,
+										new BooleanState()
+										.defaultValue(Boolean.valueOf(false))
+										.key(States.IS_CONNECTED.name)
+										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+						state_map.put(States.IS_AUTONOMOUS.name,
+										new BooleanState()
+										.defaultValue(Boolean.valueOf(false))
+										.key(States.IS_AUTONOMOUS.name)
+										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+						state_map.put(States.IS_RUNNING.name,
+										new BooleanState()
+										.defaultValue(Boolean.valueOf(false))
+										.key(States.IS_RUNNING.name)
+										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+						state_map.put(States.HAS_FIRST_AUTONOMY.name,
+										new BooleanState()
+										.defaultValue(Boolean.valueOf(false))
+										.key(States.HAS_FIRST_AUTONOMY.name)
+										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+						state_map.put(States.HAS_FIRST_GPS.name,
+										new BooleanState()
+										.defaultValue(Boolean.valueOf(false))
+										.key(States.HAS_FIRST_GPS.name)
+										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+						state_map.put(States.IS_GOING_HOME.name,
+										new BooleanState()
+										.defaultValue(Boolean.valueOf(false))
+										.key(States.IS_GOING_HOME.name)
+										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+						state_map.put(States.IS_TAKING_SAMPLE.name,
+										new BooleanState()
+										.defaultValue(Boolean.valueOf(false))
+										.key(States.IS_TAKING_SAMPLE.name)
+										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+						state_map.put(States.RC_OVERRIDE_IS_ON.name,
+										new BooleanState()
+										.defaultValue(Boolean.valueOf(false))
+										.key(States.RC_OVERRIDE_IS_ON.name)
+										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+
+
+						state_map.put(States.EC.name,
+										new DoubleState()
+										.defaultValue(Double.valueOf(0.0))
+										.key(States.EC.name)
+										.build()
+						);
+						state_map.put(States.T.name,
+										new DoubleState()
+										.defaultValue(Double.valueOf(0.0))
+										.key(States.T.name)
+										.build()
+						);
+						state_map.put(States.DO.name,
+										new DoubleState()
+										.defaultValue(Double.valueOf(0.0))
+										.key(States.DO.name)
+										.build()
+						);
+						state_map.put(States.PH.name,
+										new DoubleState()
+										.defaultValue(Double.valueOf(0.0))
+										.key(States.PH.name)
+										.build()
+						);
+						state_map.put(States.WATER_DEPTH.name,
+										new DoubleState()
+										.defaultValue(Double.valueOf(0.0))
+										.key(States.WATER_DEPTH.name)
+										.build()
+						);
+						state_map.put(States.BATTERY_VOLTAGE.name,
+										new DoubleState()
+										.defaultValue(Double.valueOf(0.0))
+										.key(States.BATTERY_VOLTAGE.name)
+										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+
+						state_map.put(States.ELAPSED_TIME.name,
+								new State<AtomicLong, Long>(AtomicLong.class, Long.class)
+								{
+										long first = System.currentTimeMillis();
+
+										@Override
+										Long customGet(int index)
+										{
+												try
+												{
+														value_array[index].set(System.currentTimeMillis() - first);
+														Log.v(logTag, String.format("retrieved elapsed time = %d ms", value_array[index].get()));
+														return value_array[index].get();
+												}
+												catch (Exception e)
+												{
+														Log.e(logTag, String.format("Elapsed time customGet() error: %s", e.getMessage()));
+														return null;
+												}
+										}
+
+										@Override
+										void customSet(int index, Long in) { }
+								}
+								.defaultValue(Long.valueOf(0))
+								.key(States.ELAPSED_TIME.name)
+								.build()
+						);
+
+						state_map.put(States.TIME_SINCE_OPERATOR.name,
+								new State<AtomicLong, Long>(AtomicLong.class, Long.class)
+								{
+										@Override
+										Long customGet(int index)
+										{
+												return System.currentTimeMillis() - value_array[index].get();
+										}
+
+										@Override
+										void customSet(int index, Long in)
+										{
+												value_array[index].set(System.currentTimeMillis()); // set to now, ignore input argument
+										}
+								}
+								.defaultValue(Long.valueOf(0))
+								.key(States.TIME_SINCE_OPERATOR.name)
+								.build()
+						);
+
+
+						state_map.put(States.CURRENT_POSE.name,
+										new UtmPoseState()
+										.defaultValue(new UtmPose())
+										.key(States.CURRENT_POSE.name)
+										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+						state_map.put(States.HOME_POSE.name,
+										new UtmPoseState()
+										.defaultValue(new UtmPose())
+										.key(States.HOME_POSE.name)
+										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+
+						state_map.put(States.NEXT_AVAILABLE_JAR.name,
+								new State<AtomicInteger, Integer>(AtomicInteger.class, Integer.class)
+								{
+										// note how the value_array is totally ignored here.
+										// Limitations of the class force the "jar_available" boolean array to be outside
+										@Override
+										Integer customGet(int index)
+										{
+												for (int i = 0; i < jar_available.length; i++)
+												{
+														if (jar_available[i].get()) return Integer.valueOf(i);
+												}
+												return -1;
+										}
+
+										@Override
+										void customSet(int index, Integer in) { }
+								}
+								.key(States.NEXT_AVAILABLE_JAR.name)
+								.defaultValue(Integer.valueOf(0))
+								.logOption(LogOption.PRINT_WHEN_CHANGED)
+								.build()
+						);
+
+						state_map.put(States.JARS_AVAILABLE.name,
+								new State<AtomicBoolean, Boolean>(AtomicBoolean.class, Boolean.class)
+								{
+										@Override
+										Boolean customGet(int index)
+										{
+												Long next_available_jar = (Long) state_map.get(States.NEXT_AVAILABLE_JAR.name).get();
+												return (next_available_jar >= 0);
+										}
+
+										@Override
+										void customSet(int index, Boolean in)
+										{
+												value_array[index].set(in);
+										}
+								}
+								.key(States.JARS_AVAILABLE.name)
+								.logOption(LogOption.PRINT_WHEN_CHANGED)
+								.build()
+						);
+				}
+				catch (Exception e)
+				{
+						Log.e(logTag, "VehicleState construction error: " + e.getMessage());
+				}
 		}
 
 		void usingJar(int i)

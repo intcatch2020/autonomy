@@ -1615,6 +1615,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 										{
 												// ASDF
 												rc_override_is_on = value.getInt("over") == 1;
+												Log.i(TAG, String.format("RC override is on = %b", rc_override_is_on));
 												setState(VehicleState.States.RC_OVERRIDE_IS_ON.name, rc_override_is_on);
 												sendRCOverride(rc_override_is_on);
 										}
