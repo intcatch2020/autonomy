@@ -310,7 +310,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 		private final Object _waypointLock = new Object();
 		// Internal references.
 		private final Context _context;
-		private final VehicleLogger mLogger;
+		final VehicleLogger mLogger;
 		private final Controller mController;
 		// Velocity shutdown timer.
 		private final ScheduledThreadPoolExecutor mVelocityExecutor = new ScheduledThreadPoolExecutor(1);

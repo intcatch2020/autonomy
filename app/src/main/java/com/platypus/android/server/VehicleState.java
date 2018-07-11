@@ -4,6 +4,8 @@ import android.util.Log;
 
 import com.platypus.crw.data.UtmPose;
 
+import org.json.JSONObject;
+
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.util.HashMap;
@@ -75,6 +77,7 @@ public class VehicleState
 					There is an array of AtomicBoolean objects, and the get and set use Boolean objects.
 					*** Uses builder pattern! You must finish an instance with .build()!
 					Builder pattern used so default settings could be handled without several constructors
+					F must always have a toString() and equals() method, or you'll have to override some methods
 					https://stackoverflow.com/questions/529085/how-to-create-a-generic-array-in-java
 				*/
 
@@ -208,11 +211,30 @@ public class VehicleState
 										case NEVER:
 												break;
 										case PRINT_ANY_SET:
-												Log.d(logTag, String.format("setState %s[%d] = %s", key, index, in.toString()));
+												//Log.d(logTag, String.format("setState %s[%d] = %s", key, index, in.toString()));
+												try
+												{
+														_serverImpl.mLogger.info(new JSONObject().put(key, in.toString()));
+												}
+												catch (Exception e)
+												{
+														Log.e(logTag, "VehicleState logging error: " + e.getMessage());
+												}
 												break;
 										case PRINT_WHEN_CHANGED:
 												// Log.v(logTag, String.format("setState %s[%d] comparing old and new values", key, index));
-												if (!isEq(index, in)) Log.d(logTag, String.format("setState changed %s[%d] = %s", key, index, in.toString()));
+												//if (!isEq(index, in)) Log.d(logTag, String.format("setState changed %s[%d] = %s", key, index, in.toString()));
+												if (!isEq(index, in))
+												{
+														try
+														{
+																_serverImpl.mLogger.info(new JSONObject().put(key, in.toString()));
+														}
+														catch (Exception e)
+														{
+																Log.e(logTag, "VehicleState logging error: " + e.getMessage());
+														}
+												}
 												break;
 										default:
 												break;
@@ -408,7 +430,6 @@ public class VehicleState
 								}
 								.defaultValue(false)
 								.key(States.EXAMPLE_STATE.name)
-								.logOption(LogOption.PRINT_ANY_SET)
 								.build()
 						);
 
@@ -432,7 +453,6 @@ public class VehicleState
 								}
 								.defaultValue(Double.valueOf(0.0))
 								.key(States.EXAMPLE_VALUE.name)
-								.logOption(LogOption.PRINT_ANY_SET)
 								.build()
 						);
 
@@ -504,7 +524,6 @@ public class VehicleState
 										new BooleanState()
 										.defaultValue(Boolean.valueOf(false))
 										.key(States.IS_CONNECTED.name)
-										.logOption(LogOption.PRINT_WHEN_CHANGED)
 										.build()
 						);
 						state_map.put(States.IS_AUTONOMOUS.name,
@@ -518,7 +537,6 @@ public class VehicleState
 										new BooleanState()
 										.defaultValue(Boolean.valueOf(false))
 										.key(States.IS_RUNNING.name)
-										.logOption(LogOption.PRINT_WHEN_CHANGED)
 										.build()
 						);
 						state_map.put(States.HAS_FIRST_AUTONOMY.name,
@@ -650,7 +668,6 @@ public class VehicleState
 										new UtmPoseState()
 										.defaultValue(new UtmPose())
 										.key(States.CURRENT_POSE.name)
-										.logOption(LogOption.PRINT_WHEN_CHANGED)
 										.build()
 						);
 						state_map.put(States.HOME_POSE.name,
