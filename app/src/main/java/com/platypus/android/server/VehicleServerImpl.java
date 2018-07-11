@@ -1608,6 +1608,17 @@ public class VehicleServerImpl extends AbstractVehicleServer
 
 										filter.gpsUpdate(utm, time_);
 								}
+								else if (name.startsWith("r"))
+								{
+										boolean rc_override_is_on;
+										if (value.has("over"))
+										{
+												// ASDF
+												rc_override_is_on = value.getInt("over") == 1;
+												setState(VehicleState.States.RC_OVERRIDE_IS_ON.name, rc_override_is_on);
+												sendRCOverride(rc_override_is_on);
+										}
+								}
 								else
 								{
 										Log.w(TAG, "Received unknown param '" + cmd + "'.");

@@ -50,7 +50,8 @@ public class VehicleState
 				NEXT_AVAILABLE_JAR("next_jar"),
 				JARS_AVAILABLE("jars_available"),
 				ALWAYS_TRUE("always_true"),
-				ALWAYS_FALSE("always_false");
+				ALWAYS_FALSE("always_false"),
+				RC_OVERRIDE_IS_ON("rc_override");
 
 				final String name;
 				States(final String _name) { name = _name; }
@@ -393,6 +394,7 @@ public class VehicleState
 				state_map.put(States.HAS_FIRST_GPS.name, new BooleanState());
 				state_map.put(States.IS_GOING_HOME.name, new BooleanState());
 				state_map.put(States.IS_TAKING_SAMPLE.name, new BooleanState());
+				state_map.put(States.RC_OVERRIDE_IS_ON.name, new BooleanState());
 				state_map.put(States.EC.name, new DoubleState());
 				state_map.put(States.T.name, new DoubleState());
 				state_map.put(States.DO.name, new DoubleState());
