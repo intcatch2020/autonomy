@@ -324,6 +324,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 		private final Timer _captureTimer = new Timer();
 		private final Timer _crumbSendTimer = new Timer();
 		private final Timer _sensorSendTimer = new Timer();
+		private final Timer _rcOverrideSendTimer = new Timer();
 		private double[][] _waypoints = new double[0][0];
 		private Long[] _waypointsKeepTimes = new Long[0];
 
@@ -573,6 +574,15 @@ public class VehicleServerImpl extends AbstractVehicleServer
 						Log.i(TAG, String.format("Sending unacknowledged SensorData, # %d", tsd.getId()));
 						SensorData sd = TimestampedSensorData.allSensorData.get(tsd.getId()).getSensorData();
 						sendSensor(sd, tsd.getId());
+				}
+		};
+
+		private TimerTask _rcOverrideSendTask = new TimerTask()
+		{
+				@Override
+				public void run()
+				{
+						sendRCOverride((boolean)vehicle_state.get(VehicleState.States.RC_OVERRIDE_IS_ON.name));
 				}
 		};
 
@@ -833,6 +843,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				_updateTimer.scheduleAtFixedRate(_updateTask, 0, UPDATE_INTERVAL_MS);
 				//_crumbSendTimer.scheduleAtFixedRate(_crumbSendTask, 0, 1000); // TODO: don't to send crumbs for now
 				//_sensorSendTimer.scheduleAtFixedRate(_sensorSendTask, 0, 500); // TODO: use memoryless sensordata transmission for now
+				_rcOverrideSendTimer.scheduleAtFixedRate(_rcOverrideSendTask, 0, 5000);
 
 				// Create a thread to read data from the controller board.
 				final Thread receiveThread = new Thread(new Runnable()
@@ -2085,5 +2096,8 @@ public class VehicleServerImpl extends AbstractVehicleServer
 
 				_captureTimer.cancel();
 				_captureTimer.purge();
+
+				_rcOverrideSendTimer.cancel();
+				_rcOverrideSendTimer.purge();
 		}
 }
