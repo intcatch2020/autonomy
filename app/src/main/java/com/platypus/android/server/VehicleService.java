@@ -137,7 +137,7 @@ public class VehicleService extends Service {
                         event.values);
                 double yaw = Math.atan2(-rotationMatrix[5], -rotationMatrix[2]);
 
-                // include 90 degrees offset if a bluebox housing is installed on the boat
+                    // include 90 degrees offset if a bluebox housing is installed on the boat
 		            if (sp != null)
 		            {
 				            boolean bluebox_installed = sp.getBoolean("pref_bluebox_installed", false);
