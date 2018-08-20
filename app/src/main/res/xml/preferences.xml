@@ -50,6 +50,7 @@
             android:summary="@string/pref_registry_addr_summary" />
     </PreferenceCategory>
 
+    <!--
     <PreferenceCategory
         android:key="pref_failsafe_category"
         android:title="@string/pref_failsafe_category_title">
@@ -73,6 +74,7 @@
             android:title="@string/pref_failsafe_timeout_title"
             android:summary="@string/pref_failsafe_timeout_summary" />
     </PreferenceCategory>
+    -->
 
     <PreferenceCategory
         android:key="pref_vehicle_category"
@@ -97,7 +99,7 @@
             android:key="pref_sensor_2_type"
             android:title="Sensor 2 Type"
             android:dialogTitle="Sensor 2 Type"
-            android:defaultValue="NONE"
+            android:defaultValue="BLUEBOX"
             android:entries="@array/pref_sensor_2_type_entries"
             android:entryValues="@array/pref_sensor_2_type_values"
             android:summary="Set the type of sensor in socket 2" />
@@ -105,15 +107,16 @@
             android:key="pref_sensor_3_type"
             android:title="Sensor 3 Type"
             android:dialogTitle="Sensor 3 Type"
-            android:defaultValue="NONE"
+            android:defaultValue="RC_SBUS"
             android:entries="@array/pref_sensor_3_type_entries"
             android:entryValues="@array/pref_sensor_3_type_values"
             android:summary="Set the type of sensor in socket 3" />
         <CheckBoxPreference
-            android:defaultValue="false"
+            android:defaultValue="true"
             android:key="pref_bluebox_installed"
             android:title="Is a BlueBox installed?"
             android:summary="Only check this box if you have an INTCATCH BlueBox housing installed on the boat"/>
+        <!--
         <CheckBoxPreference
             android:defaultValue="false"
             android:key="pref_using_decawave"
@@ -139,6 +142,7 @@
             android:key="pref_decawave_anchor_median_filter_length"
             android:title="size of decawave median filter"
             />
+        -->
     </PreferenceCategory>
 
 

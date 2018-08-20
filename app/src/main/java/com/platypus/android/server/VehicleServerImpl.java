@@ -839,6 +839,15 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				t_PID[1] = mPrefs.getFloat("gain_tI", 0.0f);
 				t_PID[2] = mPrefs.getFloat("gain_tD", 0.0f);
 
+				// August 2018: s2 and s3 should *always* be BlueBox and RC_SBUS
+				/*
+				mPrefs.edit()
+						.putString("pref_sensor_2_type_values", "BLUEBOX")
+						.putString("pref_sensor_3_type_values", "RC_SBUS")
+						.putBoolean("pref_bluebox_installed", true)
+						.apply();
+				*/
+
 				// Start any regular update runnables
 				_updateTimer.scheduleAtFixedRate(_updateTask, 0, UPDATE_INTERVAL_MS);
 				//_crumbSendTimer.scheduleAtFixedRate(_crumbSendTask, 0, 1000); // TODO: don't to send crumbs for now
