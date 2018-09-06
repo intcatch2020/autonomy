@@ -591,10 +591,36 @@ public class VehicleServerImpl extends AbstractVehicleServer
 		{
 				Crumb.acknowledge(id);
 		}
+
 		@Override
 		public void acknowledgeSensorData(long id)
 		{
 				TimestampedSensorData.acknowledged(id);
+		}
+
+		@Override
+		public void setKeyValue(String s, float v)
+		{
+		 	// ASDF
+			// create JSON to send to arduino
+			JSONObject command = new JSONObject();
+			for (int i = 0; i < 4; i++) {
+				String channel_string = "pref_sensor_" + Integer.toString(i) + "_type";
+				String sensor_type = mPrefs.getString(channel_string, "NONE");
+				if (sensor_type.equals("BLUEBOX"))
+				{
+					try {
+						command.put(String.format("s%d", i),
+								new JSONObject().put(s, Float.toString(v)));
+						if (mController.isConnected()) mController.send(command);
+						mLogger.info(new JSONObject().put("bluebox_set_value", command));
+					} catch (JSONException e) {
+						Log.w(TAG, "Unable to serialize key-value.");
+					} catch (IOException e) {
+						Log.w(TAG, "Failed to send command.", e);
+					}
+				}
+			}
 		}
 
 		/**
@@ -617,9 +643,9 @@ public class VehicleServerImpl extends AbstractVehicleServer
 						{
 								mLogger.info(new JSONObject()
 												.put("pose", new JSONObject()
-																.put("p", new JSONArray(pose.pose.getPosition()))
-																.put("q", new JSONArray(pose.pose.getRotation().getArray()))
-																.put("zone", pose.origin.toString())));
+												.put("p", new JSONArray(pose.pose.getPosition()))
+												.put("q", new JSONArray(pose.pose.getRotation().getArray()))
+												.put("zone", pose.origin.toString())));
 						}
 						catch (JSONException e)
 						{
@@ -1403,11 +1429,10 @@ public class VehicleServerImpl extends AbstractVehicleServer
 												else if (type.equalsIgnoreCase("bluebox"))
 												{
 														// need to log sensor types that don't appear in the core library enum
-														boolean skip = false; // TODO: add new sensor types to Platypus core lib
-														String nmea = value.getString("data");
-														String[] chunks = nmea.split(",");
+														boolean skip = false;
+														String[] chunks = value.getString("data").split(",");
 														String key = chunks[0];
-														if (key.equals("$GPGGA"))
+														if (key.equalsIgnoreCase("$GPGGA"))
 														{
 																// TODO: $GPGGA (gps)
 																skip = true;
@@ -1533,6 +1558,13 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																		Log.w(TAG, String.format("Unknown Bluebox $PGO00 sensor type: %s", sensor_type));
 																		skip = true;
 																}
+														}
+														else if (key.equalsIgnoreCase("$PG002"))
+														{
+															String ams_key = chunks[1];
+															String ams_value = chunks[2];
+															skip = true;
+															sendKeyValue(ams_key, Float.valueOf(ams_value)); // ASDF
 														}
 														else
 														{
@@ -2080,6 +2112,8 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				// Set velocities to zero to allow for safer transitions
 				_velocities = new Twist(DEFAULT_TWIST);
 		}
+
+
 
 		/**
 		 * Performs cleanup functions in preparation for stopping the server.
