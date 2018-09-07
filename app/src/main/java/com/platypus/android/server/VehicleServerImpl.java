@@ -104,6 +104,8 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				STOP_SAMPLER("sampler_stop"),
 				RESET_SAMPLER("sampler_reset"),
 				START_SAMPLER_TEST("start_sampler_test"),
+				START_PUMP("start_pump"),
+				STOP_PUMP("stop_pump"),
 				DO_NOTHING("do_nothing");
 
 				final String name;
@@ -269,23 +271,36 @@ public class VehicleServerImpl extends AbstractVehicleServer
 
 						case START_SAMPLER_TEST:
 						{
-								Log.i("AP", "Starting the forced sampler test");
-								// ASDF
-								// call startWaypoints
-								// force the server to think it is at one of the waypoints
-								// see if the sampler starts, a new waypoint is inserted, and station keeping starts
-								/*
-								UtmPose[] example_waypoints =
-												{
-														new UtmPose(new Pose3D(656471.32, 5029766.27, 0, 0, 0, 0), new Utm(32, true)),
-														new UtmPose(new Pose3D(656480., 5029766, 0, 0, 0, 0), new Utm(32, true)),
-														new UtmPose(new Pose3D(656490., 5029766, 0, 0, 0, 0), new Utm(32, true))
-												};
-								setAutonomous(true);
-								startWaypoints(example_waypoints, "whatever");
-								current_waypoint_index.set(2);
-								*/
-								break;
+							Log.i("AP", "Starting the forced sampler test");
+							// ASDF
+							// call startWaypoints
+							// force the server to think it is at one of the waypoints
+							// see if the sampler starts, a new waypoint is inserted, and station keeping starts
+							/*
+							UtmPose[] example_waypoints =
+											{
+													new UtmPose(new Pose3D(656471.32, 5029766.27, 0, 0, 0, 0), new Utm(32, true)),
+													new UtmPose(new Pose3D(656480., 5029766, 0, 0, 0, 0), new Utm(32, true)),
+													new UtmPose(new Pose3D(656490., 5029766, 0, 0, 0, 0), new Utm(32, true))
+											};
+							setAutonomous(true);
+							startWaypoints(example_waypoints, "whatever");
+							current_waypoint_index.set(2);
+							*/
+							break;
+						}
+
+						case START_PUMP:
+						{
+							Log.i("AP", "Turning ON the peristaltic pump");
+							setKeyValue("flag", 1);
+							break;
+						}
+
+						case STOP_PUMP:
+						{
+							Log.i("AP", "Turning OFF the peristaltic pump");
+							setKeyValue("flag", 0);
 						}
 
 						default:
@@ -1559,10 +1574,12 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																		skip = true;
 																}
 														}
-														else if (key.equalsIgnoreCase("$PG002"))
+														else if (key.equalsIgnoreCase("$PGO02"))
 														{
 															String ams_key = chunks[1];
-															String ams_value = chunks[2];
+															String ams_value_raw = chunks[2];  // need to split by "*" because some kind of timestamp thing is there
+															String[] value_chunks = ams_value_raw.split("\\*");
+															String ams_value = value_chunks[0];
 															skip = true;
 															sendKeyValue(ams_key, Float.valueOf(ams_value)); // ASDF
 														}
