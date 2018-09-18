@@ -293,14 +293,14 @@ public class VehicleServerImpl extends AbstractVehicleServer
 						case START_PUMP:
 						{
 							Log.i("AP", "Turning ON the peristaltic pump");
-							setKeyValue("flag", 1);
+							setKeyValue("pump_on", 1);
 							break;
 						}
 
 						case STOP_PUMP:
 						{
 							Log.i("AP", "Turning OFF the peristaltic pump");
-							setKeyValue("flag", 0);
+							setKeyValue("pump_on", 0);
 						}
 
 						default:
@@ -340,6 +340,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 		private final Timer _crumbSendTimer = new Timer();
 		private final Timer _sensorSendTimer = new Timer();
 		private final Timer _rcOverrideSendTimer = new Timer();
+		private final Timer _getKeyValueTimer = new Timer();
 		private double[][] _waypoints = new double[0][0];
 		private Long[] _waypointsKeepTimes = new Long[0];
 
@@ -601,6 +602,16 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				}
 		};
 
+		private TimerTask _getKeyValueTask = new TimerTask()
+		{
+			@Override
+			public void run()
+			{
+				getKeyValue("pump_on");
+				getKeyValue("hm_measurement_count");
+			}
+		};
+
 		@Override
 		public void acknowledgeCrumb(long id)
 		{
@@ -638,7 +649,14 @@ public class VehicleServerImpl extends AbstractVehicleServer
 			}
 		}
 
-		/**
+		@Override
+		public void getKeyValue(String s) {
+			// use setKeyValue() with the value = -99.99
+			// triggers the arduino to send a command to bluebox to query the value
+			setKeyValue(s, -99.99f);
+		}
+
+	/**
 		 * Internal update function called at regular intervals to process command
 		 * and control events.
 		 */
@@ -894,6 +912,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				//_crumbSendTimer.scheduleAtFixedRate(_crumbSendTask, 0, 1000); // TODO: don't to send crumbs for now
 				//_sensorSendTimer.scheduleAtFixedRate(_sensorSendTask, 0, 500); // TODO: use memoryless sensordata transmission for now
 				_rcOverrideSendTimer.scheduleAtFixedRate(_rcOverrideSendTask, 0, 5000);
+				_getKeyValueTimer.scheduleAtFixedRate(_getKeyValueTask, 0, 5000);
 
 				// Create a thread to read data from the controller board.
 				final Thread receiveThread = new Thread(new Runnable()
@@ -1567,6 +1586,15 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																		sd.value = sensor_value;
 																		sd.latlng = current_latlng;
 																		readings.add(sd);
+																}
+																else if (sensor_type.trim().equalsIgnoreCase("pumped volume"))
+																{
+																	SensorData sd = new SensorData();
+																	sd.channel = sensor;
+																	sd.type = DataType.PUMPED_VOLUME;
+																	sd.value = sensor_value;
+																	sd.latlng = current_latlng;
+																	readings.add(sd);
 																}
 																else
 																{
