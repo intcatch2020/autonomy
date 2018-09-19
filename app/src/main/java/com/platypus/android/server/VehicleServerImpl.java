@@ -608,6 +608,11 @@ public class VehicleServerImpl extends AbstractVehicleServer
 			public void run()
 			{
 				getKeyValue("pump_on");
+				try
+				{
+					Thread.sleep(1000);
+				}
+				catch (Exception e) { }
 				getKeyValue("hm_measurement_count");
 			}
 		};
@@ -1592,6 +1597,15 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																	SensorData sd = new SensorData();
 																	sd.channel = sensor;
 																	sd.type = DataType.PUMPED_VOLUME;
+																	sd.value = sensor_value;
+																	sd.latlng = current_latlng;
+																	readings.add(sd);
+																}
+																else if (sensor_type.trim().equalsIgnoreCase("current"))
+																{
+																	SensorData sd = new SensorData();
+																	sd.channel = sensor;
+																	sd.type = DataType.VOLTAMMETRY_CURRENT;
 																	sd.value = sensor_value;
 																	sd.latlng = current_latlng;
 																	readings.add(sd);
