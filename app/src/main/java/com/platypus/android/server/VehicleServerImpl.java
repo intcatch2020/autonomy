@@ -199,12 +199,16 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																		"WPs: %s", _waypoints.length, current_waypoint_index.get(), Arrays.toString(_waypoints)));
 														*/
 
-														final long SAMPLER_STATION_KEEP_TIME = 4*60*1000; // TODO: don't hardcode this
-														int cwp = current_waypoint_index.get();
-														UtmPose current_utmpose = getState(VehicleState.States.CURRENT_POSE.name);
-														insertWaypoint((cwp > 0 ? cwp : 0), // never less than 0
-																		current_utmpose.getLatLong(),
-																		SAMPLER_STATION_KEEP_TIME);
+														// only allow station keeping if the boat already has its first autonomy
+														if (getState(VehicleState.States.HAS_FIRST_AUTONOMY.name))
+														{
+															final long SAMPLER_STATION_KEEP_TIME = 4 * 60 * 1000; // TODO: don't hardcode this
+															int cwp = current_waypoint_index.get();
+															UtmPose current_utmpose = getState(VehicleState.States.CURRENT_POSE.name);
+															insertWaypoint((cwp > 0 ? cwp : 0), // never less than 0
+																	current_utmpose.getLatLong(),
+																	SAMPLER_STATION_KEEP_TIME);
+														}
 
 														/*
 														Log.v("AP", String.format("After insertWaypoint: \n" +
@@ -1504,7 +1508,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																		sd.latlng = current_latlng;
 																		readings.add(sd);
 																}
-																else if (sensor_type.trim().equalsIgnoreCase("Turbidity"))
+																else if (sensor_type.trim().equalsIgnoreCase("Turbsynt"))
 																{
 																		SensorData sd = new SensorData();
 																		sd.channel = sensor;
@@ -1606,6 +1610,42 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																	SensorData sd = new SensorData();
 																	sd.channel = sensor;
 																	sd.type = DataType.VOLTAMMETRY_CURRENT;
+																	sd.value = sensor_value;
+																	sd.latlng = current_latlng;
+																	readings.add(sd);
+																}
+																else if (sensor_type.trim().equalsIgnoreCase("NH4"))
+																{
+																	SensorData sd = new SensorData();
+																	sd.channel = sensor;
+																	sd.type = DataType.AMMONIUM;
+																	sd.value = sensor_value;
+																	sd.latlng = current_latlng;
+																	readings.add(sd);
+																}
+																else if (sensor_type.trim().equalsIgnoreCase("PO4"))
+																{
+																	SensorData sd = new SensorData();
+																	sd.channel = sensor;
+																	sd.type = DataType.PHOSPHATE;
+																	sd.value = sensor_value;
+																	sd.latlng = current_latlng;
+																	readings.add(sd);
+																}
+																else if (sensor_type.trim().equalsIgnoreCase("COD"))
+																{
+																	SensorData sd = new SensorData();
+																	sd.channel = sensor;
+																	sd.type = DataType.CHEM_OXY_DEMAND;
+																	sd.value = sensor_value;
+																	sd.latlng = current_latlng;
+																	readings.add(sd);
+																}
+																else if (sensor_type.trim().equalsIgnoreCase("BOD"))
+																{
+																	SensorData sd = new SensorData();
+																	sd.channel = sensor;
+																	sd.type = DataType.BIO_OXY_DEMAND;
 																	sd.value = sensor_value;
 																	sd.latlng = current_latlng;
 																	readings.add(sd);
