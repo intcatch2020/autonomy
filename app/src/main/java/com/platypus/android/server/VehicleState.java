@@ -302,7 +302,7 @@ public class VehicleState
 		class DoubleState extends State<Double, Double>
 		{
 				DoubleState() { super(Double.class, Double.class); }
-				Object lock = new Object();
+				final Object lock = new Object();
 				@Override
 				public Double customGet(int index)
 				{
@@ -325,7 +325,7 @@ public class VehicleState
 		class UtmPoseState extends State<UtmPose, UtmPose>
 		{
 				UtmPoseState() { super(UtmPose.class, UtmPose.class); }
-				Object lock = new Object();
+				final Object lock = new Object();
 				@Override
 				public UtmPose customGet(int index)
 				{
@@ -663,13 +663,13 @@ public class VehicleState
 								.build()
 						);
 
-
 						state_map.put(States.CURRENT_POSE.name,
 										new UtmPoseState()
 										.defaultValue(new UtmPose())
 										.key(States.CURRENT_POSE.name)
 										.build()
 						);
+
 						state_map.put(States.HOME_POSE.name,
 										new UtmPoseState()
 										.defaultValue(new UtmPose())

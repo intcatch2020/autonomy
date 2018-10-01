@@ -1015,6 +1015,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 		public void setHome(double[] new_home)
 		{
 				setState(VehicleState.States.HOME_POSE.name, new UtmPose(new_home));
+				sendHome(new_home); // send to home listener
 		}
 
 		@Override
@@ -2205,7 +2206,10 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				{
 						Log.i("AP", "Setting HAS_FIRST_AUTONOMY to true");
 						setState(VehicleState.States.HAS_FIRST_AUTONOMY.name, true);
-						setState(VehicleState.States.HOME_POSE.name, getState(VehicleState.States.CURRENT_POSE.name));
+						UtmPose current_home = getState(VehicleState.States.CURRENT_POSE.name);
+						setState(VehicleState.States.HOME_POSE.name, current_home);
+						double[] current_home_latlng = current_home.getLatLong();
+						sendHome(current_home_latlng);
 				}
 
 				// Set velocities to zero to allow for safer transitions
