@@ -104,6 +104,8 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				STOP_SAMPLER("sampler_stop"),
 				RESET_SAMPLER("sampler_reset"),
 				START_SAMPLER_TEST("start_sampler_test"),
+				START_PUMP("start_pump"),
+				STOP_PUMP("stop_pump"),
 				DO_NOTHING("do_nothing");
 
 				final String name;
@@ -197,12 +199,16 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																		"WPs: %s", _waypoints.length, current_waypoint_index.get(), Arrays.toString(_waypoints)));
 														*/
 
-														final long SAMPLER_STATION_KEEP_TIME = 4*60*1000; // TODO: don't hardcode this
-														int cwp = current_waypoint_index.get();
-														UtmPose current_utmpose = getState(VehicleState.States.CURRENT_POSE.name);
-														insertWaypoint((cwp > 0 ? cwp : 0), // never less than 0
-																		current_utmpose.getLatLong(),
-																		SAMPLER_STATION_KEEP_TIME);
+														// only allow station keeping if the boat already has its first autonomy
+														if (getState(VehicleState.States.HAS_FIRST_AUTONOMY.name))
+														{
+															final long SAMPLER_STATION_KEEP_TIME = 4 * 60 * 1000; // TODO: don't hardcode this
+															int cwp = current_waypoint_index.get();
+															UtmPose current_utmpose = getState(VehicleState.States.CURRENT_POSE.name);
+															insertWaypoint((cwp > 0 ? cwp : 0), // never less than 0
+																	current_utmpose.getLatLong(),
+																	SAMPLER_STATION_KEEP_TIME);
+														}
 
 														/*
 														Log.v("AP", String.format("After insertWaypoint: \n" +
@@ -269,23 +275,36 @@ public class VehicleServerImpl extends AbstractVehicleServer
 
 						case START_SAMPLER_TEST:
 						{
-								Log.i("AP", "Starting the forced sampler test");
-								// ASDF
-								// call startWaypoints
-								// force the server to think it is at one of the waypoints
-								// see if the sampler starts, a new waypoint is inserted, and station keeping starts
-								/*
-								UtmPose[] example_waypoints =
-												{
-														new UtmPose(new Pose3D(656471.32, 5029766.27, 0, 0, 0, 0), new Utm(32, true)),
-														new UtmPose(new Pose3D(656480., 5029766, 0, 0, 0, 0), new Utm(32, true)),
-														new UtmPose(new Pose3D(656490., 5029766, 0, 0, 0, 0), new Utm(32, true))
-												};
-								setAutonomous(true);
-								startWaypoints(example_waypoints, "whatever");
-								current_waypoint_index.set(2);
-								*/
-								break;
+							Log.i("AP", "Starting the forced sampler test");
+							// ASDF
+							// call startWaypoints
+							// force the server to think it is at one of the waypoints
+							// see if the sampler starts, a new waypoint is inserted, and station keeping starts
+							/*
+							UtmPose[] example_waypoints =
+											{
+													new UtmPose(new Pose3D(656471.32, 5029766.27, 0, 0, 0, 0), new Utm(32, true)),
+													new UtmPose(new Pose3D(656480., 5029766, 0, 0, 0, 0), new Utm(32, true)),
+													new UtmPose(new Pose3D(656490., 5029766, 0, 0, 0, 0), new Utm(32, true))
+											};
+							setAutonomous(true);
+							startWaypoints(example_waypoints, "whatever");
+							current_waypoint_index.set(2);
+							*/
+							break;
+						}
+
+						case START_PUMP:
+						{
+							Log.i("AP", "Turning ON the peristaltic pump");
+							setKeyValue("pump_on", 1);
+							break;
+						}
+
+						case STOP_PUMP:
+						{
+							Log.i("AP", "Turning OFF the peristaltic pump");
+							setKeyValue("pump_on", 0);
 						}
 
 						default:
@@ -325,6 +344,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 		private final Timer _crumbSendTimer = new Timer();
 		private final Timer _sensorSendTimer = new Timer();
 		private final Timer _rcOverrideSendTimer = new Timer();
+		private final Timer _getKeyValueTimer = new Timer();
 		private double[][] _waypoints = new double[0][0];
 		private Long[] _waypointsKeepTimes = new Long[0];
 
@@ -586,18 +606,66 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				}
 		};
 
+		private TimerTask _getKeyValueTask = new TimerTask()
+		{
+			@Override
+			public void run()
+			{
+				getKeyValue("pump_on");
+				try
+				{
+					Thread.sleep(1000);
+				}
+				catch (Exception e) { }
+				getKeyValue("hm_measurement_count");
+			}
+		};
+
 		@Override
 		public void acknowledgeCrumb(long id)
 		{
 				Crumb.acknowledge(id);
 		}
+
 		@Override
 		public void acknowledgeSensorData(long id)
 		{
 				TimestampedSensorData.acknowledged(id);
 		}
 
-		/**
+		@Override
+		public void setKeyValue(String s, float v)
+		{
+		 	// ASDF
+			// create JSON to send to arduino
+			JSONObject command = new JSONObject();
+			for (int i = 0; i < 4; i++) {
+				String channel_string = "pref_sensor_" + Integer.toString(i) + "_type";
+				String sensor_type = mPrefs.getString(channel_string, "NONE");
+				if (sensor_type.equals("BLUEBOX"))
+				{
+					try {
+						command.put(String.format("s%d", i),
+								new JSONObject().put(s, Float.toString(v)));
+						if (mController.isConnected()) mController.send(command);
+						mLogger.info(new JSONObject().put("bluebox_set_value", command));
+					} catch (JSONException e) {
+						Log.w(TAG, "Unable to serialize key-value.");
+					} catch (IOException e) {
+						Log.w(TAG, "Failed to send command.", e);
+					}
+				}
+			}
+		}
+
+		@Override
+		public void getKeyValue(String s) {
+			// use setKeyValue() with the value = -99.99
+			// triggers the arduino to send a command to bluebox to query the value
+			setKeyValue(s, -99.99f);
+		}
+
+	/**
 		 * Internal update function called at regular intervals to process command
 		 * and control events.
 		 */
@@ -617,9 +685,9 @@ public class VehicleServerImpl extends AbstractVehicleServer
 						{
 								mLogger.info(new JSONObject()
 												.put("pose", new JSONObject()
-																.put("p", new JSONArray(pose.pose.getPosition()))
-																.put("q", new JSONArray(pose.pose.getRotation().getArray()))
-																.put("zone", pose.origin.toString())));
+												.put("p", new JSONArray(pose.pose.getPosition()))
+												.put("q", new JSONArray(pose.pose.getRotation().getArray()))
+												.put("zone", pose.origin.toString())));
 						}
 						catch (JSONException e)
 						{
@@ -853,6 +921,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				//_crumbSendTimer.scheduleAtFixedRate(_crumbSendTask, 0, 1000); // TODO: don't to send crumbs for now
 				//_sensorSendTimer.scheduleAtFixedRate(_sensorSendTask, 0, 500); // TODO: use memoryless sensordata transmission for now
 				_rcOverrideSendTimer.scheduleAtFixedRate(_rcOverrideSendTask, 0, 5000);
+				_getKeyValueTimer.scheduleAtFixedRate(_getKeyValueTask, 0, 5000);
 
 				// Create a thread to read data from the controller board.
 				final Thread receiveThread = new Thread(new Runnable()
@@ -1403,11 +1472,10 @@ public class VehicleServerImpl extends AbstractVehicleServer
 												else if (type.equalsIgnoreCase("bluebox"))
 												{
 														// need to log sensor types that don't appear in the core library enum
-														boolean skip = false; // TODO: add new sensor types to Platypus core lib
-														String nmea = value.getString("data");
-														String[] chunks = nmea.split(",");
+														boolean skip = false;
+														String[] chunks = value.getString("data").split(",");
 														String key = chunks[0];
-														if (key.equals("$GPGGA"))
+														if (key.equalsIgnoreCase("$GPGGA"))
 														{
 																// TODO: $GPGGA (gps)
 																skip = true;
@@ -1440,7 +1508,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																		sd.latlng = current_latlng;
 																		readings.add(sd);
 																}
-																else if (sensor_type.trim().equalsIgnoreCase("Turbidity"))
+																else if (sensor_type.trim().equalsIgnoreCase("Turbsynt"))
 																{
 																		SensorData sd = new SensorData();
 																		sd.channel = sensor;
@@ -1528,11 +1596,74 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																		sd.latlng = current_latlng;
 																		readings.add(sd);
 																}
+																else if (sensor_type.trim().equalsIgnoreCase("pumped volume"))
+																{
+																	SensorData sd = new SensorData();
+																	sd.channel = sensor;
+																	sd.type = DataType.PUMPED_VOLUME;
+																	sd.value = sensor_value;
+																	sd.latlng = current_latlng;
+																	readings.add(sd);
+																}
+																else if (sensor_type.trim().equalsIgnoreCase("current"))
+																{
+																	SensorData sd = new SensorData();
+																	sd.channel = sensor;
+																	sd.type = DataType.VOLTAMMETRY_CURRENT;
+																	sd.value = sensor_value;
+																	sd.latlng = current_latlng;
+																	readings.add(sd);
+																}
+																else if (sensor_type.trim().equalsIgnoreCase("NH4"))
+																{
+																	SensorData sd = new SensorData();
+																	sd.channel = sensor;
+																	sd.type = DataType.AMMONIUM;
+																	sd.value = sensor_value;
+																	sd.latlng = current_latlng;
+																	readings.add(sd);
+																}
+																else if (sensor_type.trim().equalsIgnoreCase("PO4"))
+																{
+																	SensorData sd = new SensorData();
+																	sd.channel = sensor;
+																	sd.type = DataType.PHOSPHATE;
+																	sd.value = sensor_value;
+																	sd.latlng = current_latlng;
+																	readings.add(sd);
+																}
+																else if (sensor_type.trim().equalsIgnoreCase("COD"))
+																{
+																	SensorData sd = new SensorData();
+																	sd.channel = sensor;
+																	sd.type = DataType.CHEM_OXY_DEMAND;
+																	sd.value = sensor_value;
+																	sd.latlng = current_latlng;
+																	readings.add(sd);
+																}
+																else if (sensor_type.trim().equalsIgnoreCase("BOD"))
+																{
+																	SensorData sd = new SensorData();
+																	sd.channel = sensor;
+																	sd.type = DataType.BIO_OXY_DEMAND;
+																	sd.value = sensor_value;
+																	sd.latlng = current_latlng;
+																	readings.add(sd);
+																}
 																else
 																{
 																		Log.w(TAG, String.format("Unknown Bluebox $PGO00 sensor type: %s", sensor_type));
 																		skip = true;
 																}
+														}
+														else if (key.equalsIgnoreCase("$PGO02"))
+														{
+															String ams_key = chunks[1];
+															String ams_value_raw = chunks[2];  // need to split by "*" because some kind of timestamp thing is there
+															String[] value_chunks = ams_value_raw.split("\\*");
+															String ams_value = value_chunks[0];
+															skip = true;
+															sendKeyValue(ams_key, Float.valueOf(ams_value)); // ASDF
 														}
 														else
 														{
@@ -2080,6 +2211,8 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				// Set velocities to zero to allow for safer transitions
 				_velocities = new Twist(DEFAULT_TWIST);
 		}
+
+
 
 		/**
 		 * Performs cleanup functions in preparation for stopping the server.
