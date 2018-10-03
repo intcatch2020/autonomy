@@ -2200,16 +2200,21 @@ public class VehicleServerImpl extends AbstractVehicleServer
 		@Override
 		public void setAutonomous(boolean isAutonomous)
 		{
-				setState(VehicleState.States.TIME_SINCE_OPERATOR.name, null);
+				setState(VehicleState.States.TIME_SINCE_OPERATOR.name, null); // send a null b/c this has a custom get/set that ignores this anyway
 				setState(VehicleState.States.IS_AUTONOMOUS.name, isAutonomous);
 				if (isAutonomous && !(Boolean) getState(VehicleState.States.HAS_FIRST_AUTONOMY.name))
 				{
 						Log.i("AP", "Setting HAS_FIRST_AUTONOMY to true");
 						setState(VehicleState.States.HAS_FIRST_AUTONOMY.name, true);
-						UtmPose current_home = getState(VehicleState.States.CURRENT_POSE.name);
-						setState(VehicleState.States.HOME_POSE.name, current_home);
-						double[] current_home_latlng = current_home.getLatLong();
-						sendHome(current_home_latlng);
+
+						// if the current home is the default, set current pose to home
+						if ( ((UtmPose)getState(VehicleState.States.HOME_POSE.name)).isDefault() )
+						{
+							UtmPose current_home = getState(VehicleState.States.CURRENT_POSE.name);
+							setState(VehicleState.States.HOME_POSE.name, current_home);
+							double[] current_home_latlng = current_home.getLatLong();
+							sendHome(current_home_latlng);
+						}
 				}
 
 				// Set velocities to zero to allow for safer transitions
