@@ -39,8 +39,9 @@ public class VehicleState
 				T("T"),
 				PH("PH"),
 				WATER_DEPTH("water_depth"),
-				CURRENT_POSE("current_pose"), // location using UTM
-				HOME_POSE("home_pose"), // home location using UTM
+				CURRENT_POSE("current_pose"), // location, UTM
+				HOME_POSE("home_pose"), // home location, UTM
+				FIRST_POSE("first_pose"), // first GPS location, UTM
 				ELAPSED_TIME("elapsed_time"),
 				TIME_SINCE_OPERATOR("time_since_operator"), // time elapsed past last time operator detected
 				BATTERY_VOLTAGE("battery_voltage"),
@@ -211,7 +212,7 @@ public class VehicleState
 										case NEVER:
 												break;
 										case PRINT_ANY_SET:
-												//Log.d(logTag, String.format("setState %s[%d] = %s", key, index, in.toString()));
+												Log.d(logTag, String.format("setState %s[%d] = %s", key, index, in.toString()));
 												try
 												{
 														_serverImpl.mLogger.info(new JSONObject().put(key, in.toString()));
@@ -223,9 +224,10 @@ public class VehicleState
 												break;
 										case PRINT_WHEN_CHANGED:
 												// Log.v(logTag, String.format("setState %s[%d] comparing old and new values", key, index));
-												//if (!isEq(index, in)) Log.d(logTag, String.format("setState changed %s[%d] = %s", key, index, in.toString()));
+												//
 												if (!isEq(index, in))
 												{
+														Log.d(logTag, String.format("setState changed %s[%d] = %s", key, index, in.toString()));
 														try
 														{
 																_serverImpl.mLogger.info(new JSONObject().put(key, in.toString()));
@@ -674,6 +676,14 @@ public class VehicleState
 										new UtmPoseState()
 										.defaultValue(new UtmPose())
 										.key(States.HOME_POSE.name)
+										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+
+						state_map.put(States.FIRST_POSE.name,
+										new UtmPoseState()
+										.defaultValue(new UtmPose())
+										.key(States.FIRST_POSE.name)
 										.logOption(LogOption.PRINT_WHEN_CHANGED)
 										.build()
 						);

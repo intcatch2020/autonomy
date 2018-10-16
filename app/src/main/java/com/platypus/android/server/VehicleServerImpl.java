@@ -627,10 +627,16 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				Crumb.acknowledge(id);
 		}
 
+
 		@Override
 		public void acknowledgeSensorData(long id)
 		{
 				TimestampedSensorData.acknowledged(id);
+		}
+
+		@Override
+		public void acknowledgePOI(long l) {
+			// TODO: similar to acknowledge crumb and acknowledge sensor data
 		}
 
 		@Override
@@ -676,7 +682,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				{
 						UtmPose pose = filter.pose(System.currentTimeMillis());
 						setState(VehicleState.States.CURRENT_POSE.name, pose);
-						if (getState(VehicleState.States.HAS_FIRST_GPS.name))
+						if ((Boolean)getState(VehicleState.States.HAS_FIRST_GPS.name) && !((Boolean)getState(VehicleState.States.IS_GOING_HOME.name)))
 						{
 								Crumb.checkForNewCrumb(pose); // see if a new crumb should be added
 						}
@@ -1018,6 +1024,13 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				sendHome(new_home); // send to home listener
 		}
 
+		public void sendCurrentHome()
+		{
+			// because sendHome is protected to be aligned with the rest of the core library
+			UtmPose home = getState(VehicleState.States.HOME_POSE.name);
+			sendHome(home.getLatLong());
+		}
+
 		@Override
 		public double[] getHome()
 		{
@@ -1028,6 +1041,28 @@ public class VehicleServerImpl extends AbstractVehicleServer
 		@Override
 		public void startGoHome()
 		{
+			UtmPose home_location = getState(VehicleState.States.HOME_POSE.name);
+			if (home_location.isDefault())
+			{
+				Log.w(TAG, "startGoHome called, but home is null. Ignoring command.");
+				return;
+			}
+			setState(VehicleState.States.IS_GOING_HOME.name, true);
+
+			UtmPose current_location = getState(VehicleState.States.CURRENT_POSE.name);
+			UTM current_utm = UtmPose_to_UTM(current_location);
+			UTM home_utm = UtmPose_to_UTM(home_location);
+
+			double[][] go_home_waypoints = Crumb.waypointSequence(Crumb.aStar(current_utm, home_utm));
+
+			Log.i(TAG, "Performing go-home waypoints sequence");
+
+			startWaypoints(go_home_waypoints);
+
+			// TODO: call Crumb.aStar, get a list of double[][] waypoints and start following them
+			// TODO: in the part where we change waypoint status, check if IS_GOING_HOME is true and waypoint list is empty (i.e. it finished going home)
+			// TODO: 		if that is true, turn IS_GOING_HOME back to false
+
 				/*
 				if (home_UTM == null)
 				{
@@ -1061,7 +1096,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				*/
 		}
 
-		/**
+	/**
 		 * @see VehicleServer#setGains(int, double[])
 		 */
 		@Override
@@ -1602,6 +1637,15 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																	SensorData sd = new SensorData();
 																	sd.channel = sensor;
 																	sd.type = DataType.PUMPED_VOLUME;
+																	sd.value = sensor_value;
+																	sd.latlng = current_latlng;
+																	readings.add(sd);
+																}
+																else if (sensor_type.trim().equalsIgnoreCase("pressure"))
+																{
+																	SensorData sd = new SensorData();
+																	sd.channel = sensor;
+																	sd.type = DataType.PUMP_PRESSURE;
 																	sd.value = sensor_value;
 																	sd.latlng = current_latlng;
 																	readings.add(sd);
@@ -2207,9 +2251,12 @@ public class VehicleServerImpl extends AbstractVehicleServer
 						Log.i("AP", "Setting HAS_FIRST_AUTONOMY to true");
 						setState(VehicleState.States.HAS_FIRST_AUTONOMY.name, true);
 
-						// if the current home is the default, set current pose to home
-						if ( ((UtmPose)getState(VehicleState.States.HOME_POSE.name)).isDefault() )
+						// if the current home is the null default or the first gps fix, set home to current pose
+						boolean no_home = ((UtmPose)getState(VehicleState.States.HOME_POSE.name)).isDefault();
+						boolean gps_home = ((UtmPose)getState(VehicleState.States.HOME_POSE.name)).equals(getState(VehicleState.States.FIRST_POSE.name));
+						if (no_home  || gps_home)
 						{
+							Log.i("AP", "Setting HOME_POSE to current location");
 							UtmPose current_home = getState(VehicleState.States.CURRENT_POSE.name);
 							setState(VehicleState.States.HOME_POSE.name, current_home);
 							double[] current_home_latlng = current_home.getLatLong();
