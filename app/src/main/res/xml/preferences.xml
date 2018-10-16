@@ -116,6 +116,12 @@
             android:key="pref_bluebox_installed"
             android:title="Is a BlueBox installed?"
             android:summary="Only check this box if you have an INTCATCH BlueBox housing installed on the boat"/>
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:title="Send breadcrumbs to tablet?"
+            android:key="pref_send_breadcrumbs"
+            android:summary="Check this box if you want the tablet to display breadcrumbs on the map"
+            />
         <!--
         <CheckBoxPreference
             android:defaultValue="false"

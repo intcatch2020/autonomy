@@ -117,8 +117,9 @@ public class Crumb
 		// Static methods
 		private static double distanceBetweenUTM(UTM location_i, UTM location_j)
 		{
-				return Math.sqrt(location_i.eastingValue(SI.METER)*location_j.eastingValue(SI.METER) +
-						location_i.northingValue(SI.METER)*location_j.northingValue(SI.METER));
+			double dx = (location_i.eastingValue(SI.METER) - location_j.eastingValue(SI.METER));
+			double dy = (location_i.northingValue(SI.METER) - location_j.northingValue(SI.METER));
+			return Math.sqrt(dx*dx + dy*dy);
 		}
 
 		private static double distanceBetweenCrumbs(long index_i, long index_j)
@@ -208,21 +209,27 @@ public class Crumb
 				// TODO: force the start to be reachable -- this should be guaranteed if we use current location as the start
 
 				// make sure goal is reachable (i.e. it has at least one neighbor, otherwise use crumb closest to goal as the new goal
+				// use a while loop, but make sure that it doesn't loop endlessly
+				int max_attempts = crumbs_by_index.size();
+				int attempt_count = 0;
 				boolean goal_is_unreachable;
 				do {
+					attempt_count += 1;
 					Log.i("aStar", String.format("start_index = %d, goal_index = %d", start_index, goal_index));
 					goal_is_unreachable = neighbors.get(goal_index).isEmpty();
-					if (goal_is_unreachable)
-						Log.w("aStar", "Goal is unreachable, using closest crumb as new goal");
+					if (goal_is_unreachable) Log.w("aStar", "Goal is unreachable, using closest crumb as new goal");
 
 					// fill in distance to goal values
 					double min_dist_to_goal = 99999999;
 					long new_goal_index = -1;
-					for (Map.Entry<Long, Crumb> entry : crumbs_by_index.entrySet()) {
+					for (Map.Entry<Long, Crumb> entry : crumbs_by_index.entrySet())
+					{
 						double dist_to_goal = distanceBetweenCrumbs(entry.getKey(), goal_index);
 						entry.getValue().setH(dist_to_goal);
-						if (goal_is_unreachable && entry.getKey() != goal_index) {
-							if (dist_to_goal < min_dist_to_goal) {
+						if (goal_is_unreachable && entry.getKey() != goal_index)
+						{
+							if (dist_to_goal < min_dist_to_goal)
+							{
 								min_dist_to_goal = dist_to_goal;
 								new_goal_index = entry.getKey();
 							}
@@ -239,7 +246,7 @@ public class Crumb
 						*/
 					}
 					if (goal_is_unreachable) goal_index = new_goal_index;
-				} while (goal_is_unreachable);
+				} while (goal_is_unreachable && attempt_count < max_attempts);
 
 				HashMap<Long, Void> open_crumbs = new HashMap<>();
 				HashMap<Long, Double> open_costs = new HashMap<>();

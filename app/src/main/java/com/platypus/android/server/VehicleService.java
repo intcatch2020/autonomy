@@ -236,22 +236,22 @@ public class VehicleService extends Service {
             Utm origin = new Utm(utmLoc.longitudeZone(), isNorth);
             UtmPose utm = new UtmPose(pose, origin);
 
-            // Apply update using filter object
-            if (_vehicleServerImpl != null) _vehicleServerImpl.filter.gpsUpdate(utm, location.getTime());
-            if (!(Boolean)_vehicleServerImpl.getState(VehicleState.States.HAS_FIRST_GPS.name))
+            if (_vehicleServerImpl != null)
             {
-                // set HAS_FIRST_GPS to true
-                // set FIRST_POSE to this initial UtmPose
-                // if HOME_POSE is the null default, set it to this initial UtmPose
-                _vehicleServerImpl.setState(VehicleState.States.HAS_FIRST_GPS.name, true);
-                _vehicleServerImpl.setState(VehicleState.States.CURRENT_POSE.name, utm);
+                _vehicleServerImpl.filter.gpsUpdate(utm, location.getTime()); // Apply update using filter object
+                if (!(Boolean) _vehicleServerImpl.getState(VehicleState.States.HAS_FIRST_GPS.name)) {
+                    // set HAS_FIRST_GPS to true
+                    // set FIRST_POSE to this initial UtmPose
+                    // if HOME_POSE is the null default, set it to this initial UtmPose
+                    _vehicleServerImpl.setState(VehicleState.States.HAS_FIRST_GPS.name, true);
+                    _vehicleServerImpl.setState(VehicleState.States.CURRENT_POSE.name, utm);
 
-                _vehicleServerImpl.setState(VehicleState.States.FIRST_POSE.name, utm);
-                UtmPose home = _vehicleServerImpl.getState(VehicleState.States.HOME_POSE.name);
-                if (home.isDefault())
-                {
-                    _vehicleServerImpl.setState(VehicleState.States.HOME_POSE.name, utm);
-                    _vehicleServerImpl.sendCurrentHome();
+                    _vehicleServerImpl.setState(VehicleState.States.FIRST_POSE.name, utm);
+                    UtmPose home = _vehicleServerImpl.getState(VehicleState.States.HOME_POSE.name);
+                    if (home.isDefault()) {
+                        _vehicleServerImpl.setState(VehicleState.States.HOME_POSE.name, utm);
+                        _vehicleServerImpl.sendCurrentHome();
+                    }
                 }
             }
         }

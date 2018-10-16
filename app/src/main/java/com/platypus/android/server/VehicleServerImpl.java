@@ -3,6 +3,7 @@ package com.platypus.android.server;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Point;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.preference.PreferenceManager;
@@ -345,10 +346,14 @@ public class VehicleServerImpl extends AbstractVehicleServer
 		private final Timer _sensorSendTimer = new Timer();
 		private final Timer _rcOverrideSendTimer = new Timer();
 		private final Timer _getKeyValueTimer = new Timer();
+		private final Timer _POISendTimer = new Timer();
+
 		private double[][] _waypoints = new double[0][0];
 		private Long[] _waypointsKeepTimes = new Long[0];
 
 		private AtomicInteger current_waypoint_index = new AtomicInteger(-1);
+
+
 
 		int getCurrentWaypointIndex()
 		{
@@ -574,6 +579,9 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				@Override
 				public void run()
 				{
+						// check the preferences checkbox. If it is not checked, do nothing.
+						boolean send_crumbs = mPrefs.getBoolean("pref_send_breadcrumbs", false);
+						if (!send_crumbs) return;
 						Log.v(TAG, "Sending a random crumb");
 						Crumb crumb = Crumb.getRandomCrumb();
 						if (crumb == null) return;
@@ -621,6 +629,20 @@ public class VehicleServerImpl extends AbstractVehicleServer
 			}
 		};
 
+		private TimerTask _POISendTask = new TimerTask()
+		{
+			@Override
+			public void run()
+			{
+				Log.v(TAG, "Sending a random POI");
+				PointOfInterest poi = PointOfInterest.getRandomPOI();
+				if (poi == null) return;
+				sendPOI(poi.location, poi.id, poi.desc, poi.type.ordinal());
+			}
+		};
+
+
+
 		@Override
 		public void acknowledgeCrumb(long id)
 		{
@@ -636,7 +658,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 
 		@Override
 		public void acknowledgePOI(long l) {
-			// TODO: similar to acknowledge crumb and acknowledge sensor data
+			PointOfInterest.acknowledge(l);
 		}
 
 		@Override
@@ -907,7 +929,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				// Use hard-coded defaults if not specified.
 				r_PID[0] = mPrefs.getFloat("gain_rP", 0.7f);
 				r_PID[1] = mPrefs.getFloat("gain_rI", 0.0f);
-				r_PID[2] = mPrefs.getFloat("gain_rD", 0.5f);
+				r_PID[2] = mPrefs.getFloat("gain_rD", 0.9f);
 
 				t_PID[0] = mPrefs.getFloat("gain_tP", 0.5f);
 				t_PID[1] = mPrefs.getFloat("gain_tI", 0.0f);
@@ -924,7 +946,8 @@ public class VehicleServerImpl extends AbstractVehicleServer
 
 				// Start any regular update runnables
 				_updateTimer.scheduleAtFixedRate(_updateTask, 0, UPDATE_INTERVAL_MS);
-				//_crumbSendTimer.scheduleAtFixedRate(_crumbSendTask, 0, 1000); // TODO: don't to send crumbs for now
+				_crumbSendTimer.scheduleAtFixedRate(_crumbSendTask, 0, 1000);
+				_POISendTimer.scheduleAtFixedRate(_POISendTask, 0, 1000);
 				//_sensorSendTimer.scheduleAtFixedRate(_sensorSendTask, 0, 500); // TODO: use memoryless sensordata transmission for now
 				_rcOverrideSendTimer.scheduleAtFixedRate(_rcOverrideSendTask, 0, 5000);
 				_getKeyValueTimer.scheduleAtFixedRate(_getKeyValueTask, 0, 5000);
@@ -1053,47 +1076,22 @@ public class VehicleServerImpl extends AbstractVehicleServer
 			UTM current_utm = UtmPose_to_UTM(current_location);
 			UTM home_utm = UtmPose_to_UTM(home_location);
 
+			// call Crumb.aStar, get a list of double[][] waypoints and start following them
 			double[][] go_home_waypoints = Crumb.waypointSequence(Crumb.aStar(current_utm, home_utm));
 
 			Log.i(TAG, "Performing go-home waypoints sequence");
 
+			// send Points of Interest matching the sequence of waypoints
+			for (int i = 0; i < go_home_waypoints.length; i++)
+			{
+				double[] wp = go_home_waypoints[i];
+				PointOfInterest poi = PointOfInterest.getPOIByIndex(
+						PointOfInterest.newPOI(wp, MapMarkerTypes.HOMEPATH, String.format("homepath_%d", i)));
+				sendPOI(poi.location, poi.id, poi.desc, poi.type.ordinal());
+			}
+
+			setAutonomous(true);
 			startWaypoints(go_home_waypoints);
-
-			// TODO: call Crumb.aStar, get a list of double[][] waypoints and start following them
-			// TODO: in the part where we change waypoint status, check if IS_GOING_HOME is true and waypoint list is empty (i.e. it finished going home)
-			// TODO: 		if that is true, turn IS_GOING_HOME back to false
-
-				/*
-				if (home_UTM == null)
-				{
-						Log.e(TAG, "Cannot trigger failsafe, home is null");
-				}
-				is_executing_failsafe.set(true);
-				// need to execute a single start waypoints command
-				// need current position and home position
-				// START the go home action
-				UTM current_location = UTM.valueOf(
-								_utmPose.origin.zone,
-								_utmPose.origin.isNorth ? 'T' : 'L',
-								_utmPose.pose.getX(),
-								_utmPose.pose.getY(),
-								SI.METER);
-
-				/////////////////////////////////////////////
-				// List<Long> path_crumb_indices = Crumb.aStar(current_location, home_UTM);
-				List<Long> path_crumb_indices = Crumb.straightHome(current_location, home_UTM);
-				/////////////////////////////////////////////
-
-				UtmPose[] path_waypoints = new UtmPose[path_crumb_indices.size()];
-				int wp_index = 0;
-				for (long index : path_crumb_indices)
-				{
-						UTM wp = Crumb.crumbs_by_index.get(index).getLocation();
-						path_waypoints[wp_index] = UTM_to_UtmPose(wp);
-						wp_index++;
-				}
-				startWaypoints(path_waypoints);
-				*/
 		}
 
 	/**
@@ -2048,7 +2046,8 @@ public class VehicleServerImpl extends AbstractVehicleServer
 		@Override
 		public void startWaypoints(final double[][] waypoints)
 		{
-				setState(VehicleState.States.TIME_SINCE_OPERATOR.name, null);
+			// TODO: shouldn't set time since operator here! Because autonomy can call this.
+				//setState(VehicleState.States.TIME_SINCE_OPERATOR.name, null);
 				Log.i(TAG, "Starting waypoints...");
 				StringBuilder waypoints_printout = new StringBuilder("Latitude    Longitude\n");
 				for (double[] waypoint : waypoints)
@@ -2084,7 +2083,6 @@ public class VehicleServerImpl extends AbstractVehicleServer
 						public void run()
 						{
 								int wp_index = current_waypoint_index.get();
-								//if (!_isAutonomous.get())
 								if (!(Boolean)getState(VehicleState.States.IS_AUTONOMOUS.name))
 								{
 										// If we are not autonomous, do nothing
@@ -2097,6 +2095,10 @@ public class VehicleServerImpl extends AbstractVehicleServer
 										current_waypoint_index.set(-1);
 										Log.i(TAG, "Done");
 										sendWaypointUpdate(WaypointState.DONE);
+										if (getState(VehicleState.States.IS_GOING_HOME.name))
+										{
+											setState(VehicleState.States.IS_GOING_HOME.name, false);
+										}
 										synchronized (_navigationLock)
 										{
 												setVelocity(new Twist(DEFAULT_TWIST));
@@ -2297,5 +2299,11 @@ public class VehicleServerImpl extends AbstractVehicleServer
 
 				_rcOverrideSendTimer.cancel();
 				_rcOverrideSendTimer.purge();
+
+				_getKeyValueTimer.cancel();
+				_getKeyValueTimer.purge();
+
+				_POISendTimer.cancel();
+				_POISendTimer.purge();
 		}
 }
