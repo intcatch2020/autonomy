@@ -1100,21 +1100,39 @@ public class VehicleServerImpl extends AbstractVehicleServer
 			UTM home_utm = UtmPose_to_UTM(home_location);
 
 			// call Crumb.aStar, get a list of double[][] waypoints and start following them
-			double[][] go_home_waypoints = Crumb.waypointSequence(Crumb.aStar(current_utm, home_utm));
-
-			Log.i(TAG, "Performing go-home waypoints sequence");
-
-			// send Points of Interest matching the sequence of waypoints
-			for (int i = 0; i < go_home_waypoints.length; i++)
+			// need to put A* on a new joining thread, because it is bulky and will block the main thread!
+			double[][] go_home_waypoints;
+			class GoHomeRunnable implements Runnable
 			{
-				double[] wp = go_home_waypoints[i];
-				PointOfInterest poi = PointOfInterest.getPOIByIndex(
-						PointOfInterest.newPOI(wp, MapMarkerTypes.HOMEPATH, String.format("homepath_%d", i)));
-				sendPOI(poi.location, poi.id, poi.desc, poi.type.ordinal());
-			}
+				private double[][] waypoints;
+				UTM current, home;
+				private GoHomeRunnable(UTM _current, UTM _home)
+				{
+					current = _current;
+					home = _home;
+				}
+				double[][] getResult() { return waypoints.clone(); }
 
-			setAutonomous(true);
-			startWaypoints(go_home_waypoints);
+				@Override
+				public void run() {
+					waypoints = Crumb.waypointSequence(Crumb.aStar(current, home));
+					Log.i(TAG, "Performing go-home waypoints sequence");
+					// send Points of Interest matching the sequence of waypoints
+					setAutonomous(true);
+					startWaypoints(waypoints);
+
+					// TODO: could sendPOI be blocking due to bad comms, thus preventing the following startWaypoints() call from ever running?
+					// TODO: for now, call startWaypoints() first, THEN start sending POIs
+					for (int i = 0; i < waypoints.length; i++)
+					{
+						double[] wp = waypoints[i];
+						PointOfInterest poi = PointOfInterest.getPOIByIndex(
+								PointOfInterest.newPOI(wp, MapMarkerTypes.HOMEPATH, String.format("homepath_%d", i)));
+						sendPOI(poi.location, poi.id, poi.desc, poi.type.ordinal());
+					}
+				}
+			}
+			new Thread(new GoHomeRunnable(current_utm, home_utm)).start();
 		}
 
 	/**
