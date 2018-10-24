@@ -56,6 +56,7 @@ public class VehicleState
 				JARS_AVAILABLE("jars_available"),
 				ALWAYS_TRUE("always_true"),
 				ALWAYS_FALSE("always_false"),
+				GLOBAL_STATION_KEEP_TIME("global_station_keep_time"),
 				RC_OVERRIDE_IS_ON("rc_override");
 
 				final String name;
@@ -573,6 +574,14 @@ public class VehicleState
 										new BooleanState()
 										.defaultValue(Boolean.valueOf(false))
 										.key(States.RC_OVERRIDE_IS_ON.name)
+										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+
+						state_map.put(States.GLOBAL_STATION_KEEP_TIME.name,
+										new LongState()
+										.defaultValue(Long.valueOf(0))
+										.key(States.GLOBAL_STATION_KEEP_TIME.name)
 										.logOption(LogOption.PRINT_WHEN_CHANGED)
 										.build()
 						);

@@ -342,6 +342,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 		private final Timer _updateTimer = new Timer();
 		private final Timer _navigationTimer = new Timer();
 		private final Timer _captureTimer = new Timer();
+		private final Timer _newCrumbCheckTimer = new Timer();
 		private final Timer _crumbSendTimer = new Timer();
 		private final Timer _sensorSendTimer = new Timer();
 		private final Timer _rcOverrideSendTimer = new Timer();
@@ -574,6 +575,18 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				return scaled_signals;
 		}
 
+		private TimerTask _newCrumbCheckTask = new TimerTask()
+		{
+			@Override
+			public void run() {
+				UtmPose pose = getState(VehicleState.States.CURRENT_POSE.name);
+				if ((Boolean)getState(VehicleState.States.HAS_FIRST_GPS.name) && !((Boolean)getState(VehicleState.States.IS_GOING_HOME.name)))
+				{
+					Crumb.checkForNewCrumb(pose); // see if a new crumb should be added
+				}
+			}
+		};
+
 		private TimerTask _crumbSendTask = new TimerTask()
 		{
 				@Override
@@ -664,24 +677,37 @@ public class VehicleServerImpl extends AbstractVehicleServer
 		@Override
 		public void setKeyValue(String s, float v)
 		{
-		 	// ASDF
-			// create JSON to send to arduino
-			JSONObject command = new JSONObject();
-			for (int i = 0; i < 4; i++) {
-				String channel_string = "pref_sensor_" + Integer.toString(i) + "_type";
-				String sensor_type = mPrefs.getString(channel_string, "NONE");
-				if (sensor_type.equals("BLUEBOX"))
+			switch (s)
+			{
+				case "global_station_keep_time":
 				{
-					try {
-						command.put(String.format("s%d", i),
-								new JSONObject().put(s, Float.toString(v)));
-						if (mController.isConnected()) mController.send(command);
-						mLogger.info(new JSONObject().put("bluebox_set_value", command));
-					} catch (JSONException e) {
-						Log.w(TAG, "Unable to serialize key-value.");
-					} catch (IOException e) {
-						Log.w(TAG, "Failed to send command.", e);
+					long new_keep_time = (long)v; // assumes v is milliseconds
+					setState(VehicleState.States.GLOBAL_STATION_KEEP_TIME.name, new_keep_time);
+					break;
+				}
+
+				default:  // assume anything without special cases is for the bluebox
+				{
+					// ASDF
+					// create JSON to send to arduino
+					JSONObject command = new JSONObject();
+					for (int i = 0; i < 4; i++) {
+						String channel_string = "pref_sensor_" + Integer.toString(i) + "_type";
+						String sensor_type = mPrefs.getString(channel_string, "NONE");
+						if (sensor_type.equals("BLUEBOX")) {
+							try {
+								command.put(String.format("s%d", i),
+										new JSONObject().put(s, Float.toString(v)));
+								if (mController.isConnected()) mController.send(command);
+								mLogger.info(new JSONObject().put("bluebox_set_value", command));
+							} catch (JSONException e) {
+								Log.w(TAG, "Unable to serialize key-value.");
+							} catch (IOException e) {
+								Log.w(TAG, "Failed to send command.", e);
+							}
+						}
 					}
+					break;
 				}
 			}
 		}
@@ -704,10 +730,6 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				{
 						UtmPose pose = filter.pose(System.currentTimeMillis());
 						setState(VehicleState.States.CURRENT_POSE.name, pose);
-						if ((Boolean)getState(VehicleState.States.HAS_FIRST_GPS.name) && !((Boolean)getState(VehicleState.States.IS_GOING_HOME.name)))
-						{
-								Crumb.checkForNewCrumb(pose); // see if a new crumb should be added
-						}
 
 						try
 						{
@@ -946,6 +968,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 
 				// Start any regular update runnables
 				_updateTimer.scheduleAtFixedRate(_updateTask, 0, UPDATE_INTERVAL_MS);
+				_newCrumbCheckTimer.scheduleAtFixedRate(_newCrumbCheckTask, 0, 500);
 				_crumbSendTimer.scheduleAtFixedRate(_crumbSendTask, 0, 1000);
 				_POISendTimer.scheduleAtFixedRate(_POISendTask, 0, 1000);
 				//_sensorSendTimer.scheduleAtFixedRate(_sensorSendTask, 0, 500); // TODO: use memoryless sensordata transmission for now
@@ -2065,9 +2088,10 @@ public class VehicleServerImpl extends AbstractVehicleServer
 						}
 						_waypoints = waypoints.clone();
 						_waypointsKeepTimes = new Long[_waypoints.length];
+						long global_keep_time = getState(VehicleState.States.GLOBAL_STATION_KEEP_TIME.name);
 						for (int i = 0; i < _waypointsKeepTimes.length; i++)
 						{
-								_waypointsKeepTimes[i] = 0L; // assume all keep times are zero
+								_waypointsKeepTimes[i] = global_keep_time;
 						}
 				}
 

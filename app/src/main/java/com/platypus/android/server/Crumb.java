@@ -81,8 +81,8 @@ public class Crumb
 				UTM last_utm = last_crumb.getLocation();
 				double distance = Math.pow(current_utmpose.pose.getX() - last_utm.eastingValue(SI.METER), 2.0);
 				distance += Math.pow(current_utmpose.pose.getY() - last_utm.northingValue(SI.METER), 2.0);
-				if (distance >= 0.6 * MAX_NEIGHBOR_DISTANCE * MAX_NEIGHBOR_DISTANCE) {
-					// note the 0.6 coefficient. This ensures the crumbs are generated a little closer than the cutoff for neighbors
+				if (distance >= 0.5 * MAX_NEIGHBOR_DISTANCE * MAX_NEIGHBOR_DISTANCE) {
+					// note the 0.5 coefficient. This ensures the crumbs are generated a little closer than the cutoff for neighbors
 					Log.i(logTag, "Generating a new crumb");
 					newCrumb(UTM.valueOf(
 							current_utmpose.origin.zone,
@@ -234,7 +234,6 @@ public class Crumb
 								new_goal_index = entry.getKey();
 							}
 						}
-						/*
 						// verbose level print all info about all crumbs
 						String crumb_info = String.format("crumb #%d, neighbors:[", entry.getKey());
 						for (long neighbor : neighbors.get(entry.getKey()))
@@ -242,8 +241,7 @@ public class Crumb
 							crumb_info += String.format("%d, ", neighbor);
 						}
 						crumb_info += "]";
-						Log.v("aStar", crumb_info);
-						*/
+						Log.w("aStar", crumb_info);
 					}
 					if (goal_is_unreachable) goal_index = new_goal_index;
 				} while (goal_is_unreachable && attempt_count < max_attempts);
