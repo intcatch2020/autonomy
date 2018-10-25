@@ -15,11 +15,30 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TimerTask;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Created by jason on 6/7/17.
  */
+
+// TODO: LIST OF IMPROVEMENTS (NOT IN ANY PARTICULAR ORDER)
+// 1) Mechanism to remove pre-existing, redundant waypoints if we have too many
+// 2) checkForNewCrumb does not modify the graph each time, but instead just pushes the current location into a buffer, with the only requirement being at least X meters from the most recent location
+//      There is a consumer thread that will periodically pull location(s) from the buffer, check if it is worthy of being a crumb, and adds it to the graph.
+//      If there is nothing for the consumer to do, it should sleep for 1 second or something similar.
+//      We should assume that the consumer thread will be slower than the production of new locations, especially when the graph grows in size.
+//      Thus we need this buffer method to guarantee the
+
+//      When A* is called, it needs to modify the graph with anything currently in the buffer, then add start and goal as new crumbs too
+//      The reasoning behind all this: the boat moves between checking for new crumbs.
+//      If it takes a long time to modify the graph, the boat may move too far by the time a new crumb can be created.
+//      By "too far", I mean that the new crumb will NOT be connected to the previous one, the graph is not complete, and A* may fail
+//      This buffer method should still give us the benefit of building the graph as we go, but minimizing the synchronization/blocking
+//      thus minimizing the chance that the graph is incomplete.
+//      To do this, we can use a consumer thread that pops a location from the buffer and modifies the graph (or waits for X locations first)
+//      We already have a producer thread that will generate new locations.
+
 
 public class Crumb
 {
@@ -47,51 +66,127 @@ public class Crumb
 		UTM getLocation() { return location; }
 		public List<Long> getSuccessors() { return successors; }
 
-		// Static fields
+
+		// Static fields and methods
+		private static ArrayList<UtmPose> crumb_buffer = new ArrayList<>();
+		private static final Object crumbs_buffer_lock = new Object();
+		private final static int max_buffer_size = 100; // don't push into the buffer if you reach this size, or pop the oldest first
 		private final static double MAX_NEIGHBOR_DISTANCE = 5;
+		private final static double REDUNDANT_DISTANCE = 0.5; // if less than this apart from any current crumb, do not generate new crumb
 		private static Map<Long, Crumb> crumbs_by_index = new HashMap<>();
 		private static Map<Long, Crumb> unsent_crumbs = new HashMap<>();
 		private static Map<Long, Map<Long, Double>> pairwise_distances = new HashMap<>();
 		private static Map<Long, List<Long>> neighbors = new HashMap<>();
 		private static final Object crumbs_lock = new Object();
 		private static String logTag = "crumbs";
+
+		static class CrumbBufferConsumptionRunnable implements Runnable
+		{
+			UtmPose potential_crumb = null;
+
+			@Override
+			public void run()
+			{
+				potential_crumb = null;
+				synchronized (crumbs_buffer_lock)
+				{
+					if (crumb_buffer.size() > 0)
+					{
+						//Log.v(logTag, "There is at least one potential crumb location to evaluate");
+						potential_crumb = crumb_buffer.get(0).clone();
+						Log.d(logTag, String.format("Checking location %s", potential_crumb.toString()));
+						crumb_buffer.remove(0);
+					}
+				}
+
+				// if the buffer was not full enough, do nothing but sleep for one second
+				if (potential_crumb == null)
+				{
+					try
+					{
+						Log.v(logTag, "There were no potential crumbs. Sleeping...");
+						Thread.sleep(1000);
+					}
+					catch (Exception e)
+					{
+						Log.e(logTag, String.format("Crumb buffer consumption error: %s", e.getMessage()));
+					}
+				}
+				else
+				{
+					// now, we can do much slower things without worry, because the crumb buffer can safely fill up while we work
+					// check if the potential crumb is 1) far enough away from the last crumb, and 2) not very close to any crumb
+					synchronized (crumbs_lock) {
+						try {
+							if (potential_crumb.isDefault()) return; // ignore default location
+							UTM new_utm = UTM.valueOf(
+									potential_crumb.origin.zone,
+									potential_crumb.origin.isNorth ? 'T' : 'L',
+									potential_crumb.pose.getX(),
+									potential_crumb.pose.getY(),
+									SI.METER
+							);
+
+							long last_index = crumbs_by_index.size();
+							if (last_index < 1) {
+								Log.i(logTag, "Generating first crumb");
+								newCrumb(new_utm, distanceFromAllCurrentCrumbs(new_utm));
+								return;
+							}
+							Log.v(logTag, String.format("Checking to create a new crumb..."));
+							Crumb last_crumb = crumbs_by_index.get(last_index - 1);
+							UTM last_utm = last_crumb.getLocation();
+							double distance = Math.pow(potential_crumb.pose.getX() - last_utm.eastingValue(SI.METER), 2.0);
+							distance += Math.pow(potential_crumb.pose.getY() - last_utm.northingValue(SI.METER), 2.0);
+							distance = Math.sqrt(distance);
+							if (distance >= 0.75 * MAX_NEIGHBOR_DISTANCE)
+							{
+								// note the 0.75 coefficient. This ensures the crumbs are generated a little closer than the cutoff for neighbors
+
+								// execute a slower check that makes sure you are not very close to any crumb
+								Map<Long, Double> new_pairwise_distances = distanceFromAllCurrentCrumbs(new_utm);
+								for (double d : new_pairwise_distances.values())
+								{
+									if (d <= REDUNDANT_DISTANCE)
+									{
+										Log.d(logTag, String.format("No new crumb, location was redundant (dist = %.2f)", d));
+										return;
+									}
+								}
+								Log.d(logTag, String.format("Generating new crumb #%d", last_index));
+								newCrumb(new_utm, new_pairwise_distances);
+							}
+							else
+							{
+								Log.v(logTag, String.format("Distance from last crumb = %.2f, insufficient", Math.sqrt(distance)));
+							}
+						}
+						catch (Exception e)
+						{
+							Log.e(logTag, String.format("Crumb buffer consumption error: %s", e.getMessage()));
+						}
+					}
+				}
+			}
+		}
+
 		static void checkForNewCrumb(UtmPose current_utmpose)
 		{
+			synchronized (crumbs_buffer_lock)
+			{
+				if (!crumb_buffer.isEmpty())
+				{
+					// check that you aren't resending the exact same thing repeatedly
+					if (distanceBetweenUtmPose(current_utmpose, crumb_buffer.get(crumb_buffer.size() - 1)) < REDUNDANT_DISTANCE) {
+						Log.v(logTag, "Location is already in the crumbs buffer, ignoring...");
+						return;
+					}
+				}
 
-			// TODO: Need to check how I can intelligently throw away old or redundant crumbs to limit the total number
-			// TODO: Perhaps I could loop through the pairwise distances and remove ones that are within the hull of their neighbors?
-			// TODO: Or maybe there is a way of hashing a crumb by the sorted indices of its neighbors?
-			// TODO: So if there are crumbs that share all the same neighbors, eliminate one of them
-			synchronized (crumbs_lock) {
-				if (current_utmpose.isDefault()) return; // ignore default location
-				long last_index = crumbs_by_index.size();
-				if (last_index < 1) {
-					Log.i(logTag, "Generating first crumb");
-					newCrumb(UTM.valueOf(
-							current_utmpose.origin.zone,
-							current_utmpose.origin.isNorth ? 'T' : 'L',
-							current_utmpose.pose.getX(),
-							current_utmpose.pose.getY(),
-							SI.METER
-					));
-					return;
-				}
-				Log.v(logTag, String.format("Checking to drop a new crumb..."));
-				Crumb last_crumb = crumbs_by_index.get(last_index - 1);
-				UTM last_utm = last_crumb.getLocation();
-				double distance = Math.pow(current_utmpose.pose.getX() - last_utm.eastingValue(SI.METER), 2.0);
-				distance += Math.pow(current_utmpose.pose.getY() - last_utm.northingValue(SI.METER), 2.0);
-				if (distance >= 0.5 * MAX_NEIGHBOR_DISTANCE * MAX_NEIGHBOR_DISTANCE) {
-					// note the 0.5 coefficient. This ensures the crumbs are generated a little closer than the cutoff for neighbors
-					Log.i(logTag, "Generating a new crumb");
-					newCrumb(UTM.valueOf(
-							current_utmpose.origin.zone,
-							current_utmpose.origin.isNorth ? 'T' : 'L',
-							current_utmpose.pose.getX(),
-							current_utmpose.pose.getY(),
-							SI.METER
-					));
-				}
+				// TODO: if the buffer is getting too large, need to start throwing away old points. Or would it be better to throw away something else?
+				// TODO: if (crumb_buffer.size() >= max_buffer_size) crumb_buffer.remove(0);
+				Log.d(logTag, String.format("pushing %s into crumb buffer", current_utmpose.toString()));
+				crumb_buffer.add(current_utmpose);
 			}
 		}
 		static Crumb getRandomCrumb()
@@ -102,6 +197,7 @@ public class Crumb
 						Long[] unsent_ids = unsent_crumbs.keySet().toArray(new Long[0]);
 						int random_index = ThreadLocalRandom.current().nextInt(0, unsent_crumbs.size());
 						long index = unsent_ids[random_index];
+						Log.d(logTag, String.format("Random crumb: #%d", index));
 						return unsent_crumbs.get(index);
 				}
 		}
@@ -110,11 +206,24 @@ public class Crumb
 		{
 				synchronized (crumbs_lock)
 				{
-						if (unsent_crumbs.containsKey(_id)) unsent_crumbs.remove(_id);
+					// TODO: apparently unsent_crumbs.remove(_id) isn't working, because the phone keeps resending
+					Log.d(logTag, String.format("Crumb #%d was acknowledged", _id));
+					if (unsent_crumbs.containsKey(_id))
+					{
+						Log.v(logTag, "removing acknowledged crumb from unsent list");
+						unsent_crumbs.remove(_id);
+					}
 				}
 		}
 
-		// Static methods
+		private static double distanceBetweenUtmPose(UtmPose location_i, UtmPose location_j)
+		{
+			double dx = location_i.pose.getX() - location_j.pose.getX();
+			double dy = location_i.pose.getY() - location_j.pose.getY();
+			return Math.sqrt(dx*dx + dy*dy);
+		}
+
+
 		private static double distanceBetweenUTM(UTM location_i, UTM location_j)
 		{
 			double dx = (location_i.eastingValue(SI.METER) - location_j.eastingValue(SI.METER));
@@ -129,17 +238,25 @@ public class Crumb
 				return distanceBetweenUTM(location_i, location_j);
 		}
 
-		private static long newCrumb(UTM _location)
+		private static Map<Long, Double> distanceFromAllCurrentCrumbs(UTM _location)
 		{
-			// TODO: make sure this is all threadsafe
-			// TODO: since we want to turn off crumb generation while going home anyway, we can accept the large blocking delay if we synchronize the entirety of aStar
-			// TODO: IMPORTANT - do *not* synchronize newCrumb itself. I don't know if synchronization is recursive, if not then we have immediate deadlock when aStar calls newCrumb!
-			// TODO: 		so, is java synchronization recursive? i.e. can a synchronized block call a function with its own synchronized block, both using the same lock object?
-			// TODO:        Answer: https://stackoverflow.com/questions/13197756/synchronized-method-calls-itself-recursively-is-this-broken
-			// TODO:		In java, synchronization is re-entrant within a thread. Okay, so hypothetically I could synchronize newCrumb() as well.
-			// TODO:		But I don't see why I would.
-				try
+			Map<Long, Double> result = new HashMap<Long, Double>();
+			synchronized (crumbs_lock)
+			{
+				for (Map.Entry<Long, Crumb> old_entry : crumbs_by_index.entrySet())
 				{
+					long old_index = old_entry.getKey();
+					result.put(old_index, distanceBetweenUTM(_location, old_entry.getValue().getLocation()));
+				}
+				return result;
+			}
+		}
+
+		private static long newCrumb(UTM _location, Map<Long, Double> new_pairwise_distances)
+		{
+			// modify the graph of crumbs
+			synchronized (crumbs_lock)
+			{
 					// initialize objects
 					long new_index = crumbs_by_index.size();
 					Crumb new_crumb = new Crumb(new_index, _location);
@@ -148,39 +265,32 @@ public class Crumb
 					pairwise_distances.put(new_index, new HashMap<Long, Double>());
 					neighbors.put(new_index, new ArrayList<Long>());
 
-					// calculate pairwise distances and neighbors
-					for (Map.Entry<Long, Crumb> entry_i : crumbs_by_index.entrySet())
+					for (Map.Entry<Long, Crumb> old_entry : crumbs_by_index.entrySet())
 					{
-							long index_i = entry_i.getKey();
-							for (Map.Entry<Long, Crumb> entry_j : crumbs_by_index.entrySet())
-							{
-									long index_j = entry_j.getKey();
-
-									// if a Crumb is being compared to itself
-									// OR
-									// if a calculation was previously performed for pair (i,j)
-									if (index_i == index_j || pairwise_distances.get(index_i).containsKey(index_j))
-									{
-											continue; // don't perform the calculations
-									}
-
-									double pairwise_distance = distanceBetweenCrumbs(index_i, index_j);
-									pairwise_distances.get(index_i).put(index_j, pairwise_distance);
-									pairwise_distances.get(index_j).put(index_i, pairwise_distance);
-									if (pairwise_distance <= MAX_NEIGHBOR_DISTANCE)
-									{
-											neighbors.get(index_i).add(index_j);
-											neighbors.get(index_j).add(index_i);
-									}
-							}
+						long old_index = old_entry.getKey();
+						if (old_index == new_index) continue; // need to make sure that new index isn't checked against itself!
+						double distance = new_pairwise_distances.get(old_index);
+						if (distance <= MAX_NEIGHBOR_DISTANCE)
+						{
+							Log.v(logTag, String.format("New crumb #%d is neighbors with crumb #%d", new_index, old_index));
+							pairwise_distances.get(old_index).put(new_index, distance);
+							pairwise_distances.get(new_index).put(old_index, distance);
+							neighbors.get(old_index).add(new_index);
+							neighbors.get(new_index).add(old_index);
+						}
 					}
+
+					if (neighbors.get(new_index).isEmpty())
+					{
+						Log.w(logTag, String.format("WARNING: New crumb #%d has no neighbors!", new_index));
+					}
+					else if (neighbors.get(new_index).size() == 1)
+					{
+						Log.w(logTag, String.format("WARNING: New crumb #%d has only 1 neighbor", new_index));
+					}
+
 					return new_index;
-				}
-				catch (Exception e)
-				{
-						Log.e("crumbs", String.format("newCrumb() error: %s", e.getMessage()));
-						return -1;
-				}
+			}
 		}
 
 		public static List<Long> straightHome(UTM start, UTM goal)
@@ -189,8 +299,8 @@ public class Crumb
 			{
 				// Simple: go straight home from the start
 				List<Long> path_sequence = new ArrayList<>();
-				long start_index = newCrumb(start);
-				long goal_index = newCrumb(goal);
+				long start_index = newCrumb(start, distanceFromAllCurrentCrumbs(start));
+				long goal_index = newCrumb(goal, distanceFromAllCurrentCrumbs(goal));
 				path_sequence.add(start_index);
 				path_sequence.add(goal_index);
 				return path_sequence;
@@ -201,10 +311,9 @@ public class Crumb
 		{
 			synchronized (crumbs_lock)
 			{
-				// TODO: I need to stop new crumbs from being created while the boat is going home!
 				Log.i("aStar", "Starting A* calculation...");
-				long start_index = newCrumb(start);
-				long goal_index = newCrumb(goal);
+				long start_index = newCrumb(start, distanceFromAllCurrentCrumbs(start));
+				long goal_index = newCrumb(goal, distanceFromAllCurrentCrumbs(goal));
 
 				// TODO: force the start to be reachable -- this should be guaranteed if we use current location as the start
 

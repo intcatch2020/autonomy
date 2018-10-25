@@ -155,7 +155,7 @@ class LineFollowController implements VehicleController {
             // PID
             rudder_pids = server_impl.getGains(5);
             heading_error_deriv = (heading_error - heading_error_old)/dt;
-            Log.v("gyro", String.format("heading error rate = %.2f  rev./sec", heading_error_deriv/2/Math.PI));
+            //Log.v("gyro", String.format("heading error rate = %.2f  rev./sec", heading_error_deriv/2/Math.PI));
             double[] gyro = server_impl.getGyro(); // gyro[2] is yaw rate
             if (rudder_pids[1] > 0.0)
             {

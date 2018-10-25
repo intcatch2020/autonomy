@@ -1,5 +1,7 @@
 package com.platypus.android.server;
 
+import android.util.Log;
+
 import com.platypus.crw.VehicleServer;
 
 import java.util.HashMap;
@@ -13,6 +15,7 @@ public class PointOfInterest
     VehicleServer.MapMarkerTypes type;
     long id;
 
+    private static String logTag = "POI";
     private static final Object poi_lock = new Object();
     private static Map<Long, PointOfInterest> poi_by_index = new HashMap<>();
     private static Map<Long, PointOfInterest> unsent_poi = new HashMap<>();
@@ -31,6 +34,7 @@ public class PointOfInterest
         {
             long new_index = poi_by_index.size();
             PointOfInterest new_poi = new PointOfInterest(new_index, _location, _type, _desc);
+            Log.v(logTag, String.format("Generating new POI #%d", new_index));
             poi_by_index.put(new_index, new_poi);
             unsent_poi.put(new_index, new_poi);
             return new_index;
@@ -39,9 +43,14 @@ public class PointOfInterest
 
     static void acknowledge(long _id)
     {
+        Log.d(logTag, String.format("POI #%d was acknowledged", _id));
         synchronized (poi_lock)
         {
-            if (unsent_poi.containsKey(_id)) unsent_poi.remove(_id);
+            if (unsent_poi.containsKey(_id))
+            {
+                Log.v(logTag, "removing acknowledged POI from unsent list");
+                unsent_poi.remove(_id);
+            }
         }
     }
 

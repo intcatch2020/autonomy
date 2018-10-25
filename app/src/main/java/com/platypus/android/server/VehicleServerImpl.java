@@ -33,6 +33,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -342,12 +344,13 @@ public class VehicleServerImpl extends AbstractVehicleServer
 		private final Timer _updateTimer = new Timer();
 		private final Timer _navigationTimer = new Timer();
 		private final Timer _captureTimer = new Timer();
-		private final Timer _newCrumbCheckTimer = new Timer();
+		private final Timer _crumbProducerTimer = new Timer();
 		private final Timer _crumbSendTimer = new Timer();
 		private final Timer _sensorSendTimer = new Timer();
 		private final Timer _rcOverrideSendTimer = new Timer();
 		private final Timer _getKeyValueTimer = new Timer();
 		private final Timer _POISendTimer = new Timer();
+		private final ScheduledExecutorService _crumbConsumerExecutor = Executors.newSingleThreadScheduledExecutor();
 
 		private double[][] _waypoints = new double[0][0];
 		private Long[] _waypointsKeepTimes = new Long[0];
@@ -575,14 +578,14 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				return scaled_signals;
 		}
 
-		private TimerTask _newCrumbCheckTask = new TimerTask()
+		private TimerTask _crumbProducerTask = new TimerTask()
 		{
 			@Override
 			public void run() {
 				UtmPose pose = getState(VehicleState.States.CURRENT_POSE.name);
 				if ((Boolean)getState(VehicleState.States.HAS_FIRST_GPS.name) && !((Boolean)getState(VehicleState.States.IS_GOING_HOME.name)))
 				{
-					Crumb.checkForNewCrumb(pose); // see if a new crumb should be added
+					Crumb.checkForNewCrumb(pose); // push current position into a buffer
 				}
 			}
 		};
@@ -597,7 +600,12 @@ public class VehicleServerImpl extends AbstractVehicleServer
 						if (!send_crumbs) return;
 						Log.v(TAG, "Sending a random crumb");
 						Crumb crumb = Crumb.getRandomCrumb();
-						if (crumb == null) return;
+						if (crumb == null)
+						{
+							Log.v(TAG, "There are no crumbs to send. Ignoring...");
+							return;
+						}
+
 						UTM utm = crumb.getLocation();
 						UtmPose utmpose = UTM_to_UtmPose(utm);
 						sendCrumb(utmpose.getLatLong(), crumb.getIndex());
@@ -649,8 +657,13 @@ public class VehicleServerImpl extends AbstractVehicleServer
 			{
 				Log.v(TAG, "Sending a random POI");
 				PointOfInterest poi = PointOfInterest.getRandomPOI();
-				if (poi == null) return;
+				if (poi == null)
+				{
+					Log.v(TAG, "There are no POI to send, ignoring...");
+					return;
+				}
 				sendPOI(poi.location, poi.id, poi.desc, poi.type.ordinal());
+				Log.i(TAG, String.format("Sent POI #%d", poi.id));
 			}
 		};
 
@@ -968,12 +981,15 @@ public class VehicleServerImpl extends AbstractVehicleServer
 
 				// Start any regular update runnables
 				_updateTimer.scheduleAtFixedRate(_updateTask, 0, UPDATE_INTERVAL_MS);
-				_newCrumbCheckTimer.scheduleAtFixedRate(_newCrumbCheckTask, 0, 500);
 				_crumbSendTimer.scheduleAtFixedRate(_crumbSendTask, 0, 1000);
 				_POISendTimer.scheduleAtFixedRate(_POISendTask, 0, 1000);
 				//_sensorSendTimer.scheduleAtFixedRate(_sensorSendTask, 0, 500); // TODO: use memoryless sensordata transmission for now
 				_rcOverrideSendTimer.scheduleAtFixedRate(_rcOverrideSendTask, 0, 5000);
 				_getKeyValueTimer.scheduleAtFixedRate(_getKeyValueTask, 0, 5000);
+				_crumbProducerTimer.scheduleAtFixedRate(_crumbProducerTask, 0, 500);
+				_crumbConsumerExecutor.scheduleWithFixedDelay(new Crumb.CrumbBufferConsumptionRunnable(), 0, 100, TimeUnit.MILLISECONDS);
+				// crumb consumer uses "with fixed delay" because it may be slow, thus we want to only execute another call after we are sure the last one finished
+
 
 				// Create a thread to read data from the controller board.
 				final Thread receiveThread = new Thread(new Runnable()
@@ -1101,7 +1117,6 @@ public class VehicleServerImpl extends AbstractVehicleServer
 
 			// call Crumb.aStar, get a list of double[][] waypoints and start following them
 			// need to put A* on a new joining thread, because it is bulky and will block the main thread!
-			double[][] go_home_waypoints;
 			class GoHomeRunnable implements Runnable
 			{
 				private double[][] waypoints;
@@ -1126,9 +1141,10 @@ public class VehicleServerImpl extends AbstractVehicleServer
 					for (int i = 0; i < waypoints.length; i++)
 					{
 						double[] wp = waypoints[i];
-						PointOfInterest poi = PointOfInterest.getPOIByIndex(
-								PointOfInterest.newPOI(wp, MapMarkerTypes.HOMEPATH, String.format("homepath_%d", i)));
-						sendPOI(poi.location, poi.id, poi.desc, poi.type.ordinal());
+                        PointOfInterest.newPOI(wp, MapMarkerTypes.HOMEPATH, String.format("homepath_%d", i));
+						//PointOfInterest poi = PointOfInterest.getPOIByIndex(
+						//		PointOfInterest.newPOI(wp, MapMarkerTypes.HOMEPATH, String.format("homepath_%d", i)));
+						//sendPOI(poi.location, poi.id, poi.desc, poi.type.ordinal());
 					}
 				}
 			}
@@ -2347,5 +2363,9 @@ public class VehicleServerImpl extends AbstractVehicleServer
 
 				_POISendTimer.cancel();
 				_POISendTimer.purge();
+
+				_crumbProducerTimer.cancel();
+				_crumbProducerTimer.purge();
+				_crumbConsumerExecutor.shutdown();
 		}
 }
