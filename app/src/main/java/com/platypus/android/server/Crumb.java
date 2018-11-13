@@ -13,8 +13,11 @@ import javax.measure.unit.SI;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TimerTask;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -59,6 +62,7 @@ public class Crumb
 		private void setG(double _g) { g = _g; }
 		private double getG() { return g; }
 		private void setH(double _h) { h = _h; }
+		private double getH() { return h;}
 		private void setParent(long _parent) { parent = _parent; }
 		private long getParent() { return parent; }
 		private double getCost() { return g + h; }
@@ -226,8 +230,8 @@ public class Crumb
 
 		private static double distanceBetweenUTM(UTM location_i, UTM location_j)
 		{
-			double dx = (location_i.eastingValue(SI.METER) - location_j.eastingValue(SI.METER));
-			double dy = (location_i.northingValue(SI.METER) - location_j.northingValue(SI.METER));
+			double dx = location_i.eastingValue(SI.METER) - location_j.eastingValue(SI.METER);
+			double dy = location_i.northingValue(SI.METER) - location_j.northingValue(SI.METER);
 			return Math.sqrt(dx*dx + dy*dy);
 		}
 
@@ -307,113 +311,111 @@ public class Crumb
 			}
 		}
 
-		public static List<Long> aStar(UTM start, UTM goal)
+		public static List<Long> aStar(UTM start, UTM goal) throws Exception
 		{
 			synchronized (crumbs_lock)
 			{
 				Log.i("aStar", "Starting A* calculation...");
 				long start_index = newCrumb(start, distanceFromAllCurrentCrumbs(start));
 				long goal_index = newCrumb(goal, distanceFromAllCurrentCrumbs(goal));
-
-				// TODO: force the start to be reachable -- this should be guaranteed if we use current location as the start
-
-				// make sure goal is reachable (i.e. it has at least one neighbor, otherwise use crumb closest to goal as the new goal
-				// use a while loop, but make sure that it doesn't loop endlessly
-				int max_attempts = crumbs_by_index.size();
-				int attempt_count = 0;
-				boolean goal_is_unreachable;
+				long original_goal_index = goal_index;
+				double original_distance = distanceBetweenCrumbs(start_index, original_goal_index);
+				Set<Long> attempted_goals = new HashSet<>();
+				Set<Long> open_crumbs = new HashSet<>();
+				Set<Long> closed_crumbs = new HashSet<>();
+				List<Long> path_sequence = new ArrayList<>();
+				boolean goal_is_reachable;
 				do {
-					attempt_count += 1;
-					Log.i("aStar", String.format("start_index = %d, goal_index = %d", start_index, goal_index));
-					goal_is_unreachable = neighbors.get(goal_index).isEmpty();
-					if (goal_is_unreachable) Log.w("aStar", "Goal is unreachable, using closest crumb as new goal");
+					attempted_goals.add(goal_index);
 
-					// fill in distance to goal values
-					double min_dist_to_goal = 99999999;
-					long new_goal_index = -1;
-					for (Map.Entry<Long, Crumb> entry : crumbs_by_index.entrySet())
-					{
+					for (Map.Entry<Long, Crumb> entry : crumbs_by_index.entrySet()) {
 						double dist_to_goal = distanceBetweenCrumbs(entry.getKey(), goal_index);
 						entry.getValue().setH(dist_to_goal);
-						if (goal_is_unreachable && entry.getKey() != goal_index)
-						{
-							if (dist_to_goal < min_dist_to_goal)
-							{
-								min_dist_to_goal = dist_to_goal;
+					}
+					open_crumbs.clear();
+					closed_crumbs.clear();
+					path_sequence.clear();
+					long current_crumb = 0;
+					long iterations = 0;
+
+					// A*
+					open_crumbs.add(start_index);
+					Log.d("aStar", String.format("open_crumbs.size() = %d", open_crumbs.size()));
+
+					while (open_crumbs.size() > 0) {
+						iterations += 1;
+						Log.d("aStar", String.format("A* iter %d:  %d open, %d closed",
+								iterations, open_crumbs.size(), closed_crumbs.size()));
+
+						// find open crumb with lowest cost
+						double lowest_cost = 99999999;
+						for (Long entry : open_crumbs) {
+							double cost = crumbs_by_index.get(entry).getCost();
+							if (cost < lowest_cost) {
+								//Log.v("aStar", String.format("crumb # %d has lowest cost = %.2f", entry.getKey(), cost));
+								lowest_cost = cost;
+								current_crumb = entry;
+							}
+						}
+						Log.d("aStar", String.format("Current crumb index = %d", current_crumb));
+						if (current_crumb == goal_index) {
+							Log.i("aStar", String.format("Reached goal crumb %d, exiting loop", goal_index));
+							break; // reached goal node, exit loop
+						}
+						Log.d("aStar", String.format("Current crumb has %d neighbors: %s",
+								neighbors.get(current_crumb).size(),
+								neighbors.get(current_crumb).toString()));
+						for (long s : neighbors.get(current_crumb)) {
+							double potential_g = crumbs_by_index.get(current_crumb).getG() + pairwise_distances.get(current_crumb).get(s);
+							if (open_crumbs.contains(s)) {
+								if (crumbs_by_index.get(s).getG() <= potential_g) continue;
+							} else if (closed_crumbs.contains(s)) {
+								if (crumbs_by_index.get(s).getG() > potential_g) {
+									open_crumbs.add(s);
+									closed_crumbs.remove(s);
+								} else {
+									continue;
+								}
+							} else {
+								open_crumbs.add(s);
+							}
+							crumbs_by_index.get(s).setG(potential_g);
+							crumbs_by_index.get(s).setParent(current_crumb);
+						}
+						open_crumbs.remove(current_crumb);
+						closed_crumbs.add(current_crumb);
+					}
+					path_sequence.add(current_crumb);
+					while (path_sequence.get(0) != start_index) {
+						path_sequence.add(0, crumbs_by_index.get(path_sequence.get(0)).getParent());
+					}
+
+					// check if final index matches goal index
+					goal_is_reachable = path_sequence.get(path_sequence.size()-1) == goal_index;
+
+					// if it does not match, need to select new goal
+					if (!goal_is_reachable) {
+						// find point closest to goal that
+						//   1) has not be attempted
+						//   2) is closer to the goal than the start (otherwise what's the point?)
+						long new_goal_index = -1;
+						double distance_to_goal = 999999;
+						for (Map.Entry<Long, Crumb> entry : crumbs_by_index.entrySet()) {
+							if (attempted_goals.contains(entry.getKey())) continue;
+							double h = entry.getValue().getH();
+							if (h < distance_to_goal && h < original_distance) {
+								distance_to_goal = h;
 								new_goal_index = entry.getKey();
 							}
 						}
-						// verbose level print all info about all crumbs
-						String crumb_info = String.format("crumb #%d, neighbors:[", entry.getKey());
-						for (long neighbor : neighbors.get(entry.getKey()))
-						{
-							crumb_info += String.format("%d, ", neighbor);
-						}
-						crumb_info += "]";
-						Log.w("aStar", crumb_info);
+						// handle the scenario where new_goal_index is never set
+						if (new_goal_index == -1) throw new Exception("A* ERROR: there are no reachable goal candidates");
+						goal_index = new_goal_index;
 					}
-					if (goal_is_unreachable) goal_index = new_goal_index;
-				} while (goal_is_unreachable && attempt_count < max_attempts);
+				} while (!goal_is_reachable);
 
-				HashMap<Long, Void> open_crumbs = new HashMap<>();
-				HashMap<Long, Double> open_costs = new HashMap<>();
-				HashMap<Long, Void> closed_crumbs = new HashMap<>();
-				List<Long> path_sequence = new ArrayList<>();
-				long current_crumb = 0;
-				long iterations = 0;
-				open_crumbs.put(start_index, null);
-				Log.d("aStar", String.format("open_crumbs.size() = %d", open_crumbs.size()));
+				// TODO: need to delete goal breadcrumb, otherwise we will violate the purpose of breadcrumbs
 
-				while (open_crumbs.size() > 0) {
-					iterations += 1;
-					Log.d("aStar", String.format("A* iter %d:  %d open, %d closed",
-							iterations, open_crumbs.size(), closed_crumbs.size()));
-
-					// recreate open costs map
-					open_costs.clear();
-					double lowest_cost = 99999999;
-					for (Map.Entry<Long, Void> entry : open_crumbs.entrySet()) {
-						double cost = crumbs_by_index.get(entry.getKey()).getCost();
-						open_costs.put(entry.getKey(), cost);
-						if (cost < lowest_cost) {
-							//Log.v("aStar", String.format("crumb # %d has lowest cost = %.2f", entry.getKey(), cost));
-							lowest_cost = cost;
-							current_crumb = entry.getKey();
-						}
-					}
-					Log.d("aStar", String.format("Current crumb index = %d", current_crumb));
-					if (current_crumb == goal_index) {
-						Log.i("aStar", String.format("Reached goal crumb %d, exiting loop", goal_index));
-						break; // reached goal node, exit loop
-					}
-					Log.d("aStar", String.format("Current crumb has %d neighbors: %s",
-							neighbors.get(current_crumb).size(),
-							neighbors.get(current_crumb).toString()));
-					for (long s : neighbors.get(current_crumb)) {
-						double potential_g = crumbs_by_index.get(current_crumb).getG() + pairwise_distances.get(current_crumb).get(s);
-						if (open_crumbs.containsKey(s)) {
-							if (crumbs_by_index.get(s).getG() <= potential_g) continue;
-						} else if (closed_crumbs.containsKey(s)) {
-							if (crumbs_by_index.get(s).getG() > potential_g) {
-								open_crumbs.put(s, null);
-								closed_crumbs.remove(s);
-							} else {
-								continue;
-							}
-						} else {
-							open_crumbs.put(s, null);
-						}
-						crumbs_by_index.get(s).setG(potential_g);
-						crumbs_by_index.get(s).setParent(current_crumb);
-					}
-					open_crumbs.remove(current_crumb);
-					closed_crumbs.put(current_crumb, null);
-				}
-				path_sequence.add(current_crumb);
-				while (path_sequence.get(0) != start_index) {
-					path_sequence.add(0, crumbs_by_index.get(path_sequence.get(0)).getParent());
-				}
-				Log.i("aStar", "Path sequence = " + path_sequence.toString());
 				return path_sequence;
 			}
 		}

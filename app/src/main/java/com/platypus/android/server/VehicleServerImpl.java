@@ -1119,32 +1119,39 @@ public class VehicleServerImpl extends AbstractVehicleServer
 			// need to put A* on a new joining thread, because it is bulky and will block the main thread!
 			class GoHomeRunnable implements Runnable
 			{
-				private double[][] waypoints;
+				private double[][] go_home_waypoints;
 				UTM current, home;
 				private GoHomeRunnable(UTM _current, UTM _home)
 				{
 					current = _current;
 					home = _home;
 				}
-				double[][] getResult() { return waypoints.clone(); }
+				double[][] getResult() { return go_home_waypoints.clone(); }
 
 				@Override
 				public void run() {
-					waypoints = Crumb.waypointSequence(Crumb.aStar(current, home));
+					try {
+						go_home_waypoints = Crumb.waypointSequence(Crumb.aStar(current, home));
+					} catch (Exception e) {
+						Log.e(TAG, String.format("A* threw an exception: %s", e.getMessage()));
+						return;
+					}
+
+					// Set home to the final point in the sequence. The boat may have selected
+					// a replacement home if it could not reach the original home.
+					setHome(go_home_waypoints[go_home_waypoints.length-1]);
+
 					Log.i(TAG, "Performing go-home waypoints sequence");
 					// send Points of Interest matching the sequence of waypoints
 					setAutonomous(true);
-					startWaypoints(waypoints);
+					startWaypoints(go_home_waypoints);
 
 					// TODO: could sendPOI be blocking due to bad comms, thus preventing the following startWaypoints() call from ever running?
 					// TODO: for now, call startWaypoints() first, THEN start sending POIs
-					for (int i = 0; i < waypoints.length; i++)
+					for (int i = 0; i < go_home_waypoints.length; i++)
 					{
-						double[] wp = waypoints[i];
+						double[] wp = go_home_waypoints[i];
                         PointOfInterest.newPOI(wp, MapMarkerTypes.HOMEPATH, String.format("homepath_%d", i));
-						//PointOfInterest poi = PointOfInterest.getPOIByIndex(
-						//		PointOfInterest.newPOI(wp, MapMarkerTypes.HOMEPATH, String.format("homepath_%d", i)));
-						//sendPOI(poi.location, poi.id, poi.desc, poi.type.ordinal());
 					}
 				}
 			}
