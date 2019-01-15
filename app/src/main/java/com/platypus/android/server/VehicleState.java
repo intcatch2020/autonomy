@@ -57,7 +57,9 @@ public class VehicleState
 				ALWAYS_TRUE("always_true"),
 				ALWAYS_FALSE("always_false"),
 				GLOBAL_STATION_KEEP_TIME("global_station_keep_time"),
-				RC_OVERRIDE_IS_ON("rc_override");
+				RC_OVERRIDE_IS_ON("rc_override"),
+				SAMPLER_START_TIME_MS("sampler_start_time_ms"),
+				AUTOMATIC_SAMPLING("automatic_sampling");
 
 				final String name;
 				States(final String _name) { name = _name; }
@@ -622,6 +624,18 @@ public class VehicleState
 										.defaultValue(Double.valueOf(0.0))
 										.key(States.BATTERY_VOLTAGE.name)
 										.logOption(LogOption.PRINT_WHEN_CHANGED)
+										.build()
+						);
+						state_map.put(States.SAMPLER_START_TIME_MS.name,
+								new LongState()
+										.defaultValue((long) 0)
+										.key(States.SAMPLER_START_TIME_MS.name)
+										.build()
+						);
+						state_map.put(States.AUTOMATIC_SAMPLING.name,
+								new BooleanState()
+										.defaultValue(Boolean.FALSE)
+										.key(States.AUTOMATIC_SAMPLING.name)
 										.build()
 						);
 

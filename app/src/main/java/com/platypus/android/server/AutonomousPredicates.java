@@ -476,7 +476,8 @@ public class AutonomousPredicates
 		}
 		private void loadFromFile(String filename)
 		{
-				final File file = new File(Environment.getExternalStorageDirectory() + "/platypus_behaviors/" + filename);
+				final File file = new File(Environment.getExternalStoragePublicDirectory(
+						Environment.DIRECTORY_DOCUMENTS) + "/platypus_behaviors/" + filename);
 				/*
 				1) read all lines in the human readable file, put them into a single string
 				2) JSONTokener parses human readable string into a JSONObject with all default behaviors
@@ -751,7 +752,7 @@ public class AutonomousPredicates
 												action = definition.getString(key);
 												action = action.trim();
 												// make sure the action is one of the available ones
-												if (!VehicleServerImpl.Actions.contains(action)) throw new Exception("task definition contains unknown action");
+												if (!VehicleServerImpl.Actions.contains(action)) throw new Exception("task definition contains unknown action " + action);
 												break;
 										case "trigger":
 										case "t":

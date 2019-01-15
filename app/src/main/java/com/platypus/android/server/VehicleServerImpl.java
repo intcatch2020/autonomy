@@ -3,7 +3,6 @@ package com.platypus.android.server;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.graphics.Point;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.preference.PreferenceManager;
@@ -169,8 +168,33 @@ public class VehicleServerImpl extends AbstractVehicleServer
 						}
 						case START_SAMPLER:
 						{
-								// First, find next available sample jar
-								Object retrieval = getState(VehicleState.States.NEXT_AVAILABLE_JAR.name);
+								Object retrieval = getState(VehicleState.States.AUTOMATIC_SAMPLING.name);
+								if (retrieval == null)
+								{
+									Log.e("AP", "Retrieved a null after requesting automatic sampling value");
+									return;
+								}
+								boolean automatic_sampling = (boolean) retrieval;
+
+								if (!automatic_sampling) {
+									return;
+								}
+
+								retrieval = getState(VehicleState.States.SAMPLER_START_TIME_MS.name);
+								if (retrieval == null)
+								{
+									Log.e("AP", "Retrieved a null after requesting sampler start time");
+									return;
+								}
+								Long sampler_start_time = (Long) retrieval;
+
+								if (sampler_start_time > System.currentTimeMillis() - 4 * 60 * 1000) {
+									return;
+								}
+
+
+							// First, find next available sample jar
+								retrieval = getState(VehicleState.States.NEXT_AVAILABLE_JAR.name);
 								if (retrieval == null)
 								{
 										Log.e("AP", "Retrieved a null after requesting next available jar");
@@ -183,6 +207,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 										Log.w("AP", "No sampler jars are available. Ignoring START_SAMPLER command");
 										return;
 								}
+
 								Log.i("AP", String.format("Starting sampler jar # %d", next_available_jar));
 								JSONObject command = new JSONObject();
 								JSONObject samplerSettings = new JSONObject();
@@ -223,14 +248,13 @@ public class VehicleServerImpl extends AbstractVehicleServer
 														command.put(String.format("s%d", i), samplerSettings);
 
 														// TODO: only call mController.send() if hardware is connected
-														setState(VehicleState.States.IS_TAKING_SAMPLE.name, true);
+														setState(VehicleState.States.SAMPLER_START_TIME_MS.name, System.currentTimeMillis());
 														vehicle_state.usingJar(next_available_jar);
 														mController.send(command);
 
-														// TODO: start a time task that will run after SAMPLER_STATION_KEEP_TIME, setting is_taking_sample to false
+													mController.send(command);
 
-
-														return;
+													return;
 												}
 										}
 								}
@@ -308,6 +332,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 						{
 							Log.i("AP", "Turning OFF the peristaltic pump");
 							setKeyValue("pump_on", 0);
+							break;
 						}
 
 						default:
@@ -1304,6 +1329,8 @@ public class VehicleServerImpl extends AbstractVehicleServer
 						{
 								Log.w(TAG, "Unable to send sampler command.", e);
 						}
+				} else if (axis == 8) {
+					setState(VehicleState.States.AUTOMATIC_SAMPLING.name, k[0] == 1);
 				}
 
 				// Log the new gain settings to the logfile.
@@ -1589,6 +1616,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																		sd.type = DataType.EC_GOSYS;
 																		sd.value = sensor_value;
 																		sd.latlng = current_latlng;
+																		setState(VehicleState.States.EC.name, sensor_value);
 																		readings.add(sd);
 																}
 																else if (sensor_type.trim().equalsIgnoreCase("Oxygen"))
@@ -1604,6 +1632,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																		sd.type = DataType.DO_GOSYS;
 																		sd.value = sensor_value;
 																		sd.latlng = current_latlng;
+																		setState(VehicleState.States.DO.name, sensor_value);
 																		readings.add(sd);
 																}
 																else if (sensor_type.trim().equalsIgnoreCase("Turbsynt"))
@@ -1623,6 +1652,8 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																		sd.type = DataType.PH_GOSYS;
 																		sd.value = sensor_value;
 																		sd.latlng = current_latlng;
+
+																		setState(VehicleState.States.PH.name, sensor_value);
 																		readings.add(sd);
 																}
 																else if (sensor_type.trim().equalsIgnoreCase("Redox"))
@@ -1647,6 +1678,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																		sd.type = DataType.T_GOSYS;
 																		sd.value = sensor_value;
 																		sd.latlng = current_latlng;
+																		setState(VehicleState.States.T.name, sensor_value);
 																		readings.add(sd);
 																}
 																else if (sensor_type.trim().equalsIgnoreCase("Salinity"))
