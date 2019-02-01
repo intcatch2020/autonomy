@@ -1381,6 +1381,8 @@ public class VehicleServerImpl extends AbstractVehicleServer
 				@SuppressWarnings("unchecked")
 				Iterator<String> keyIterator = cmd.keys();
 
+				Log.d("BLUEBOX_JSON", cmd.toString());
+
 				// Iterate through JSON fields
 				while (keyIterator.hasNext())
 				{
@@ -1690,7 +1692,7 @@ public class VehicleServerImpl extends AbstractVehicleServer
 																		sd.latlng = current_latlng;
 																		readings.add(sd);
 																}
-																else if (sensor_type.trim().equalsIgnoreCase("chlorophyll"))
+																else if (sensor_type.trim().equalsIgnoreCase("chlorophyl") || sensor_type.trim().equalsIgnoreCase("chlorophyll"))
 																{
 																		SensorData sd = new SensorData();
 																		sd.channel = sensor;
